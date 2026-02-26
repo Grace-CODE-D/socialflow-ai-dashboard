@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction DB Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #2d5016; }
+        .error { background: #5c1a1a; }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background: #0052a3; }
+        #output {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Transaction DB Test</h1>
+    <div>
+        <button onclick="runTests()">Run All Tests</button>
+        <button onclick="clearOutput()">Clear Output</button>
+    </div>
+    <div id="output"></div>
+
+    <script type="module">
+        const DB_NAME = 'SocialFlowTransactions';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'transactions';
+
+        class TransactionDB {
+            constructor() {
+                this.db = null;
+            }
+
+            async init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        this.db = request.result;
+                        resolve();
+                    };
+
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                            
+                            store.createIndex('timestamp', 'timestamp', { unique: false });
+                            store.createIndex('type', 'type', { unique: false });
+                            store.createIndex('asset', 'asset', { unique: false });
+                            store.createIndex('status', 'status', { unique: false });
+                            
+                            store.createIndex('type_timestamp', ['type', 'timestamp'], { unique: false });
+                            store.createIndex('asset_timestamp', ['asset', 'timestamp'], { unique: false });
+                            store.createIndex('status_timestamp', ['status', 'timestamp'], { unique: false });
+                            store.createIndex('type_asset', ['type', 'asset'], { unique: false });
+                        }
+                    };
+                });
+            }
+
+            async addTransaction(tx) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.put(tx);
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async addTransactions(txs) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    
+                    txs.forEach(tx => store.put(tx));
+                    
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = () => reject(transaction.error);
+                });
+            }
+
+            async getAllTransactions() {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.getAll();
+                    
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async getTransactionsByType(type) {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const index = store.index('type');
+                    const request = index.getAll(type);
+                    
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async clearAll() {
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.clear();
+                    
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+        }
+
+        const db = new TransactionDB();
+        let testsPassed = 0;
+        let testsFailed = 0;
+
+        function log(message, isSuccess = true) {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+            div.textContent = message;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        async function runTests() {
+            testsPassed = 0;
+            testsFailed = 0;
+            document.getElementById('output').innerHTML = '';
+            
+            log('🧪 Starting tests...', true);
+
+            try {
+                // Test 1: Initialize
+                log('Test 1: Initialize database');
+                await db.init();
+                testsPassed++;
+                log('✅ Database initialized', true);
+
+                // Test 2: Add single transaction
+                log('Test 2: Add single transaction');
+                const testTx = {
+                    id: 'test_tx_1',
+                    type: 'payment',
+                    amount: '100',
+                    asset: 'XLM',
+                    timestamp: Date.now(),
+                    status: 'confirmed',
+                    syncedAt: Date.now(),
+                };
+                await db.addTransaction(testTx);
+                testsPassed++;
+                log('✅ Transaction added', true);
+
+                // Test 3: Add bulk transactions
+                log('Test 3: Add bulk transactions');
+                const bulkTxs = Array.from({ length: 10 }, (_, i) => ({
+                    id: `bulk_tx_${i}`,
+                    type: ['payment', 'token', 'nft'][i % 3],
+                    amount: String((i + 1) * 10),
+                    asset: ['XLM', 'USDC', 'BTC'][i % 3],
+                    timestamp: Date.now() - i * 1000,
+                    status: 'confirmed',
+                    syncedAt: Date.now(),
+                }));
+                await db.addTransactions(bulkTxs);
+                testsPassed++;
+                log('✅ Bulk transactions added', true);
+
+                // Test 4: Get all transactions
+                log('Test 4: Get all transactions');
+                const allTxs = await db.getAllTransactions();
+                testsPassed++;
+                log(`✅ Retrieved ${allTxs.length} transactions`, true);
+
+                // Test 5: Query by type
+                log('Test 5: Query by type');
+                const paymentTxs = await db.getTransactionsByType('payment');
+                testsPassed++;
+                log(`✅ Found ${paymentTxs.length} payment transactions`, true);
+
+                // Test 6: Clear database
+                log('Test 6: Clear database');
+                await db.clearAll();
+                const afterClear = await db.getAllTransactions();
+                testsPassed++;
+                log(`✅ Database cleared. Remaining: ${afterClear.length}`, true);
+
+                log(`\n🎉 All tests passed! (${testsPassed}/${testsPassed + testsFailed})`, true);
+
+            } catch (error) {
+                testsFailed++;
+                log(`❌ Test failed: ${error.message}`, false);
+                log(`\n⚠️ Tests completed with errors: ${testsPassed} passed, ${testsFailed} failed`, false);
+            }
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+
+        window.runTests = runTests;
+        window.clearOutput = clearOutput;
+
+        // Auto-run on load
+        log('Ready to test. Click "Run All Tests" button.', true);
+    </script>
+</body>
+</html>

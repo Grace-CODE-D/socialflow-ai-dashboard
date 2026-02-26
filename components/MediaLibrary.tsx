@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from './ui/Card';
 import { ViewProps } from '../types';
+import ipfsService from '../src/blockchain/services/IPFSService'
 
 const MaterialIcon = ({ name, className }: { name: string, className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -21,6 +22,7 @@ export const MediaLibrary: React.FC<ViewProps> = () => {
   const [selectedFolder, setSelectedFolder] = useState('All Media');
   const [layout, setLayout] = useState<'grid' | 'list'>('grid');
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -40,18 +42,32 @@ export const MediaLibrary: React.FC<ViewProps> = () => {
 
   useOutsideAlerter(menuRef, () => setOpenMenuId(null));
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-        const file = e.target.files[0];
-        const newItem = {
-            id: Date.now(),
-            type: file.type.startsWith('video') ? 'video' : 'image',
-            url: URL.createObjectURL(file),
-            name: file.name
-        };
-        setMediaItems([newItem, ...mediaItems]);
-    }
-  };
+   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || e.target.files.length === 0) return
+      const files = Array.from(e.target.files)
+      const addedItems = files.map((file) => ({
+         id: Date.now() + Math.random(),
+         type: file.type.startsWith('video') ? 'video' : 'image',
+         url: URL.createObjectURL(file),
+         name: file.name,
+         uploading: true,
+      }))
+      setMediaItems((prev) => [...addedItems, ...prev])
+
+      // Upload each file and replace the local URL with gateway URL on success
+      for (let i = 0; i < files.length; i++) {
+         const file = files[i]
+         const localId = addedItems[i].id
+         try {
+            const result = await ipfsService.uploadFile(file, (_uploaded, _total) => {
+               // could map progress into UI per-file using state if desired
+            })
+            setMediaItems((prev) => prev.map((it) => (it.id === localId ? { ...it, url: result.gatewayUrl, uploading: false } : it)))
+         } catch (err) {
+            setMediaItems((prev) => prev.map((it) => (it.id === localId ? { ...it, uploading: false, uploadError: true } : it)))
+         }
+      }
+   }
   
   const deleteItem = (id: number) => {
       setMediaItems(prev => prev.filter(item => item.id !== id));
@@ -119,9 +135,16 @@ export const MediaLibrary: React.FC<ViewProps> = () => {
 
            {layout === 'grid' ? (
                <div className="columns-2 md:columns-3 lg:columns-4 gap-6 space-y-6">
-                  {filteredItems.map((item) => (
+                  {loading ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="break-inside-avoid">
+                        <div className="w-full h-64 bg-white/5 rounded-2xl animate-pulse" />
+                      </div>
+                    ))
+                  ) : (
+                    filteredItems.map((item) => (
                      <div key={item.id} className="relative group break-inside-avoid cursor-pointer">
-                        <img 
+                        <LazyImage 
                           src={item.url} 
                           alt={item.name} 
                           className="w-full rounded-2xl border border-dark-border group-hover:border-primary-blue/50 transition-colors"
@@ -146,13 +169,16 @@ export const MediaLibrary: React.FC<ViewProps> = () => {
                            </div>
                         </div>
                      </div>
-                  ))}
+                  )))}
                </div>
            ) : (
                <div className="space-y-2">
-                   {filteredItems.map((item) => (
+                   {loading ? (
+                     <ListSkeleton count={6} />
+                   ) : (
+                     filteredItems.map((item) => (
                        <div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl hover:bg-white/5 transition-colors border border-transparent hover:border-dark-border cursor-pointer">
-                           <img src={item.url} className="w-12 h-12 rounded-lg object-cover" />
+                           <LazyImage src={item.url} alt={item.name} className="w-12 h-12 rounded-lg object-cover" />
                            <div className="flex-1">
                                <p className="text-sm font-medium text-white">{item.name}</p>
                                <p className="text-xs text-gray-subtext uppercase">{item.type}</p>
@@ -169,7 +195,7 @@ export const MediaLibrary: React.FC<ViewProps> = () => {
                                 )}
                             </div>
                        </div>
-                   ))}
+                   )))}
                </div>
            )}
            

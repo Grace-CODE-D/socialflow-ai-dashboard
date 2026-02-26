@@ -1,8 +1,13 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const blockchainMonitor = require('./blockchainMonitor');
+
+let mainWindow = null;
+
+let eventMonitorBridge;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
@@ -21,15 +26,44 @@ function createWindow() {
     }
   });
 
+  // Set main window reference for blockchain monitor
+  blockchainMonitor.setMainWindow(mainWindow);
+
   // In development, load from Vite dev server
   if (!app.isPackaged) {
-    win.loadURL('http://localhost:5173');
-    // win.webContents.openDevTools(); // Uncomment to debug
+    mainWindow.loadURL('http://localhost:5173');
+    // mainWindow.webContents.openDevTools(); // Uncomment to debug
   } else {
     // In production, load the built html
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // Handle window close
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
+
+// IPC Handlers for blockchain monitoring
+ipcMain.on('blockchain:start-monitoring', (event, { publicKey }) => {
+  console.log('[Main] Starting blockchain monitoring for:', publicKey);
+  blockchainMonitor.startPaymentMonitoring(publicKey);
+  blockchainMonitor.startOperationMonitoring(publicKey);
+});
+
+ipcMain.on('blockchain:stop-monitoring', (event, { publicKey }) => {
+  console.log('[Main] Stopping blockchain monitoring for:', publicKey);
+  blockchainMonitor.stopPaymentMonitoring(publicKey);
+  blockchainMonitor.stopOperationMonitoring(publicKey);
+});
+
+ipcMain.handle('blockchain:get-monitored-accounts', () => {
+  return blockchainMonitor.getMonitoredAccounts();
+});
+
+ipcMain.handle('blockchain:get-active-streams', () => {
+  return blockchainMonitor.getActiveStreamsCount();
+});
 
 app.whenReady().then(() => {
   createWindow();
@@ -42,7 +76,15 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // Stop all blockchain monitoring
+  blockchainMonitor.stopAll();
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  // Cleanup blockchain monitoring
+  blockchainMonitor.stopAll();
 });

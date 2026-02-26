@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from './ui/Card';
-import { Platform, ViewProps, View } from '../types';
+import { Platform, ViewProps, View, MonetizationSettings } from '../types';
 import { generateCaption } from '../services/geminiService';
+import { uploadToIPFS } from '../services/nftService';
 import { SiInstagram, SiFacebook, SiLinkedin } from 'react-icons/si';
 import { FaXTwitter } from 'react-icons/fa6';
 
@@ -22,6 +23,14 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
   const [saveStatus, setSaveStatus] = useState('');
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('10:00');
+  const [monetization, setMonetization] = useState<MonetizationSettings>({
+    enableTips: false,
+    payPerView: false,
+    subscriptionOnly: false,
+    tipAmount: 0,
+    accessPrice: 0,
+    selectedToken: 'XLM'
+  });
 
   const getTodayString = () => {
     const today = new Date();
@@ -41,6 +50,14 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
       setTopic(draft.topic || '');
       setScheduleDate(draft.scheduleDate || getTodayString());
       setScheduleTime(draft.scheduleTime || '10:00');
+      setMonetization(draft.monetization || {
+        enableTips: false,
+        payPerView: false,
+        subscriptionOnly: false,
+        tipAmount: 0,
+        accessPrice: 0,
+        selectedToken: 'XLM'
+      });
       setSaveStatus('Draft loaded');
       setTimeout(() => setSaveStatus(''), 2000);
     } else {
@@ -86,7 +103,7 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
   };
 
   const handleSaveDraft = () => {
-    const draft = { caption, selectedPlatforms, mediaPreview, topic, scheduleDate, scheduleTime };
+    const draft = { caption, selectedPlatforms, mediaPreview, topic, scheduleDate, scheduleTime, monetization };
     localStorage.setItem('socialflow-draft', JSON.stringify(draft));
     setSaveStatus('Draft saved!');
     setTimeout(() => setSaveStatus(''), 2000);
@@ -101,25 +118,82 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
     setMediaFile(null);
     setScheduleDate(getTodayString());
     setScheduleTime('10:00');
+    setMonetization({
+      enableTips: false,
+      payPerView: false,
+      subscriptionOnly: false,
+      tipAmount: 0,
+      accessPrice: 0,
+      selectedToken: 'XLM'
+    });
     if(fileInputRef.current) fileInputRef.current.value = '';
     setSaveStatus('Draft cleared!');
     setTimeout(() => setSaveStatus(''), 2000);
   }
 
-  const handleSchedule = () => {
+  const handleSchedule = async () => {
     if (!caption && !mediaFile) {
       alert("Please add some content to schedule.");
       return;
     }
+
     const button = document.getElementById('schedule-btn');
     if(button) button.innerText = "Scheduling...";
     
-    setTimeout(() => {
-        console.log("Post scheduled:", { caption, selectedPlatforms, mediaFile, scheduleDate, scheduleTime });
-        handleClearDraft();
-        alert("Post scheduled successfully! Check console for details.");
-        onNavigate(View.CALENDAR);
-    }, 1000);
+    try {
+      let ipfsHash = '';
+      
+      // If monetization is enabled, upload metadata to IPFS
+      if (monetization.enableTips || monetization.payPerView || monetization.subscriptionOnly) {
+        const metadata = {
+          postId: `post-${Date.now()}`,
+          monetization: monetization,
+          caption: caption,
+          platforms: selectedPlatforms,
+          timestamp: new Date().toISOString()
+        };
+        
+        ipfsHash = await uploadToIPFS(JSON.stringify(metadata));
+        console.log("Monetization metadata uploaded to IPFS:", ipfsHash);
+      }
+
+      const postData = {
+        caption,
+        selectedPlatforms,
+        mediaFile,
+        scheduleDate,
+        scheduleTime,
+        monetization: {
+          ...monetization,
+          ipfsMetadataHash: ipfsHash
+        }
+      };
+
+      console.log("Post scheduled:", postData);
+      handleClearDraft();
+      alert("Post scheduled successfully! Check console for details.");
+      onNavigate(View.CALENDAR);
+    } catch (error) {
+      console.error("Error scheduling post:", error);
+      alert("Error scheduling post. Please try again.");
+      if(button) button.innerText = "Schedule Post";
+    }
+  };
+
+  const handlePromotePost = () => {
+    if (!caption && !mediaFile) {
+      alert("Please add some content before promoting.");
+      return;
+    }
+    setIsPromotionModalOpen(true);
+  };
+
+  const handlePaymentComplete = (transaction: PaymentTransaction) => {
+    setPromotionTransaction(transaction);
+    setIsPromoted(true);
+    setIsPromotionModalOpen(false);
+    setSaveStatus('Post promoted successfully!');
+    setTimeout(() => setSaveStatus(''), 3000);
   };
 
   const handleTopicEdit = () => {
@@ -143,6 +217,26 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
                {saveStatus}
              </div>
            )}
+           {isPromoted && promotionTransaction && (
+             <div className="flex items-center gap-2">
+               <SponsoredBadge tier={promotionTransaction.sponsorshipTier} />
+               <span className="text-xs text-gray-400">
+                 Tx: {promotionTransaction.transactionHash?.slice(0, 8)}...
+               </span>
+             </div>
+           )}
+           <button 
+             onClick={handlePromotePost}
+             disabled={isPromoted}
+             className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-medium transition-all ${
+               isPromoted 
+                 ? 'bg-green-500/20 text-green-400 cursor-not-allowed' 
+                 : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:opacity-90 shadow-lg shadow-purple-500/20'
+             }`}
+           >
+             <MaterialIcon name={isPromoted ? "check_circle" : "campaign"} className="text-base" />
+             {isPromoted ? 'Promoted' : 'Promote Post'}
+           </button>
            <button 
              onClick={handleSaveDraft}
              className="text-gray-subtext hover:text-white text-sm font-medium px-4 py-2"
@@ -278,6 +372,135 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
                </button>
             </div>
           </Card>
+
+          <Card>
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <MaterialIcon name="account_balance_wallet" className="text-primary-teal" />
+              Web3 Monetization
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-dark-bg rounded-xl border border-dark-border hover:border-primary-blue/30 transition-colors">
+                <div className="flex items-center gap-3">
+                  <MaterialIcon name="volunteer_activism" className="text-primary-teal" />
+                  <div>
+                    <p className="text-white font-medium text-sm">Enable Tips</p>
+                    <p className="text-gray-subtext text-xs">Allow viewers to send tips</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={monetization.enableTips}
+                    onChange={(e) => setMonetization({...monetization, enableTips: e.target.checked})}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-dark-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-blue"></div>
+                </label>
+              </div>
+
+              {monetization.enableTips && (
+                <div className="ml-4 p-3 bg-dark-bg rounded-xl border border-dark-border">
+                  <label className="block text-xs font-medium text-gray-subtext mb-2">Suggested Tip Amount</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={monetization.tipAmount || 0}
+                      onChange={(e) => setMonetization({...monetization, tipAmount: parseFloat(e.target.value)})}
+                      className="flex-1 bg-dark-surface border border-dark-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-blue/50"
+                      placeholder="0.00"
+                    />
+                    <span className="text-gray-subtext text-sm">{monetization.selectedToken}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-3 bg-dark-bg rounded-xl border border-dark-border hover:border-primary-blue/30 transition-colors">
+                <div className="flex items-center gap-3">
+                  <MaterialIcon name="lock" className="text-primary-teal" />
+                  <div>
+                    <p className="text-white font-medium text-sm">Pay-per-View (XLM)</p>
+                    <p className="text-gray-subtext text-xs">Charge for content access</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={monetization.payPerView}
+                    onChange={(e) => setMonetization({...monetization, payPerView: e.target.checked})}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-dark-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-blue"></div>
+                </label>
+              </div>
+
+              {monetization.payPerView && (
+                <div className="ml-4 p-3 bg-dark-bg rounded-xl border border-dark-border">
+                  <label className="block text-xs font-medium text-gray-subtext mb-2">Access Price</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={monetization.accessPrice || 0}
+                      onChange={(e) => setMonetization({...monetization, accessPrice: parseFloat(e.target.value)})}
+                      className="flex-1 bg-dark-surface border border-dark-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-blue/50"
+                      placeholder="0.00"
+                    />
+                    <span className="text-gray-subtext text-sm">{monetization.selectedToken}</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">⚠️ Wallet signature required for on-chain access control</p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-3 bg-dark-bg rounded-xl border border-dark-border hover:border-primary-blue/30 transition-colors">
+                <div className="flex items-center gap-3">
+                  <MaterialIcon name="card_membership" className="text-primary-teal" />
+                  <div>
+                    <p className="text-white font-medium text-sm">Subscription Only</p>
+                    <p className="text-gray-subtext text-xs">Exclusive for subscribers</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={monetization.subscriptionOnly}
+                    onChange={(e) => setMonetization({...monetization, subscriptionOnly: e.target.checked})}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-dark-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-blue"></div>
+                </label>
+              </div>
+
+              <div className="p-3 bg-dark-bg rounded-xl border border-dark-border">
+                <label className="block text-xs font-medium text-gray-subtext mb-2">Asset Selector</label>
+                <select 
+                  value={monetization.selectedToken}
+                  onChange={(e) => setMonetization({...monetization, selectedToken: e.target.value})}
+                  className="w-full bg-dark-surface border border-dark-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary-blue/50"
+                >
+                  <option value="XLM">XLM (Stellar Lumens)</option>
+                  <option value="USDC">USDC (USD Coin)</option>
+                  <option value="ETH">ETH (Ethereum)</option>
+                  <option value="CUSTOM">Custom Token</option>
+                </select>
+              </div>
+
+              {(monetization.enableTips || monetization.payPerView || monetization.subscriptionOnly) && (
+                <div className="p-3 bg-gradient-to-r from-primary-blue/10 to-primary-teal/10 rounded-xl border border-primary-blue/30">
+                  <div className="flex items-start gap-2">
+                    <MaterialIcon name="info" className="text-primary-teal text-base mt-0.5" />
+                    <div>
+                      <p className="text-white text-xs font-medium">Monetization Active</p>
+                      <p className="text-gray-subtext text-xs mt-1">Metadata will be stored on IPFS and linked to your post</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-6">
@@ -336,6 +559,13 @@ export const CreatePost: React.FC<ViewProps> = ({ onNavigate }) => {
           </Card>
         </div>
       </div>
+
+      <PaymentModal
+        isOpen={isPromotionModalOpen}
+        onClose={() => setIsPromotionModalOpen(false)}
+        onPaymentComplete={handlePaymentComplete}
+        postId={`post_${Date.now()}`}
+      />
     </div>
   );
 };

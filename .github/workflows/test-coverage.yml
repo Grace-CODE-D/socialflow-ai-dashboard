@@ -1,0 +1,62 @@
+name: Test Coverage
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests with coverage
+        run: npm run test:ci
+      
+      - name: Generate coverage badge
+        run: npm run test:coverage:report
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+      
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        with:
+          lcov-file: ./coverage/lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Check coverage thresholds
+        run: |
+          node -e "
+          const coverage = require('./coverage/coverage-summary.json');
+          const total = coverage.total;
+          const failed = [];
+          
+          if (total.lines.pct < 80) failed.push('lines');
+          if (total.statements.pct < 80) failed.push('statements');
+          if (total.functions.pct < 80) failed.push('functions');
+          if (total.branches.pct < 80) failed.push('branches');
+          
+          if (failed.length > 0) {
+            console.error('❌ Coverage threshold not met for:', failed.join(', '));
+            process.exit(1);
+          }
+          console.log('✅ All coverage thresholds met!');
+          "

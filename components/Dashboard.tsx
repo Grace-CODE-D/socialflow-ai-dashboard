@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card } from './ui/Card';
+import { SponsoredBadge } from './ui/SponsoredBadge';
 import { ViewProps } from '../types';
 import { SiInstagram, SiYoutube, SiFacebook, SiLinkedin } from 'react-icons/si';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -19,13 +20,63 @@ const data = [
 ];
 
 const activityData = [
-  { id: 1, type: 'post', platform: 'Instagram', text: 'New post published', time: '2h ago' },
-  { id: 2, type: 'milestone', platform: 'YouTube', text: 'Hit 10k subscribers', time: '4h ago' },
-  { id: 3, type: 'alert', platform: 'System', text: 'Weekly report ready', time: '5h ago' },
-  { id: 4, type: 'comment', platform: 'Facebook', text: 'High engagement on recent ad', time: '8h ago' },
+  { 
+    id: 1, 
+    type: 'sponsored_post', 
+    platform: 'Instagram', 
+    text: 'Sponsored post is performing well', 
+    time: '1h ago',
+    isSponsored: true,
+    sponsorshipTier: 'premium' as const,
+    stats: { likes: 1250, views: 8400 }
+  },
+  { 
+    id: 2, 
+    type: 'post', 
+    platform: 'Instagram', 
+    text: 'New post published', 
+    time: '2h ago',
+    isSponsored: false 
+  },
+  { 
+    id: 3, 
+    type: 'sponsored_post', 
+    platform: 'Facebook', 
+    text: 'Enterprise promotion reaching target audience', 
+    time: '3h ago',
+    isSponsored: true,
+    sponsorshipTier: 'enterprise' as const,
+    stats: { likes: 2100, views: 15600 }
+  },
+  { 
+    id: 4, 
+    type: 'milestone', 
+    platform: 'YouTube', 
+    text: 'Hit 10k subscribers', 
+    time: '4h ago',
+    isSponsored: false 
+  },
+  { 
+    id: 5, 
+    type: 'alert', 
+    platform: 'System', 
+    text: 'Weekly report ready', 
+    time: '5h ago',
+    isSponsored: false 
+  },
+  { 
+    id: 6, 
+    type: 'sponsored_post', 
+    platform: 'LinkedIn', 
+    text: 'Basic promotion completed successfully', 
+    time: '6h ago',
+    isSponsored: true,
+    sponsorshipTier: 'basic' as const,
+    stats: { likes: 340, views: 2100 }
+  },
 ];
 
-export const Dashboard: React.FC<ViewProps> = ({ onNavigate }) => {
+export const Dashboard: React.FC<ViewProps> = () => {
   const [timeRange, setTimeRange] = useState('Last 7 Days');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -170,15 +221,40 @@ export const Dashboard: React.FC<ViewProps> = ({ onNavigate }) => {
               <div className="absolute left-[19px] top-2 bottom-2 w-[1px] bg-dark-border" />
               {activityData.map((item, index) => (
                 <div key={item.id} className="relative flex items-start gap-4">
-                  <div className={`relative z-10 w-10 h-10 rounded-full border-4 border-dark-surface flex items-center justify-center shrink-0 ${index === 0 ? 'bg-primary-blue' : 'bg-gray-700'}`}>
-                    <div className="w-2 h-2 bg-white rounded-full" />
+                  <div className={`relative z-10 w-10 h-10 rounded-full border-4 border-dark-surface flex items-center justify-center shrink-0 ${
+                    item.isSponsored 
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500' 
+                      : index === 0 ? 'bg-primary-blue' : 'bg-gray-700'
+                  }`}>
+                    {item.isSponsored ? (
+                      <MaterialIcon name="campaign" className="text-white text-sm" />
+                    ) : (
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    )}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">{item.text}</p>
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-white">{item.text}</p>
+                      {item.isSponsored && item.sponsorshipTier && (
+                        <SponsoredBadge tier={item.sponsorshipTier} className="shrink-0" />
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-primary-blue bg-primary-blue/10 px-2 py-0.5 rounded-full">{item.platform}</span>
                       <span className="text-xs text-gray-subtext">{item.time}</span>
                     </div>
+                    {item.isSponsored && item.stats && (
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <MaterialIcon name="favorite" className="text-xs" />
+                          {item.stats.likes.toLocaleString()}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MaterialIcon name="visibility" className="text-xs" />
+                          {item.stats.views.toLocaleString()}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

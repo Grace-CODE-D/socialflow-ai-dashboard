@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card } from './ui/Card';
+// Card import removed (unused)
 import { ViewProps, View } from '../types';
 import { SiInstagram, SiFacebook, SiYoutube } from 'react-icons/si';
 

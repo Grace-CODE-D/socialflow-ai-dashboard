@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction History Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        h2 {
+            color: #2196F3;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 10px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .pass {
+            background: #1b5e20;
+            border-left: 4px solid #4CAF50;
+        }
+        .fail {
+            background: #b71c1c;
+            border-left: 4px solid #f44336;
+        }
+        .info {
+            background: #01579b;
+            border-left: 4px solid #2196F3;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .summary {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .summary.success {
+            background: #1b5e20;
+            color: #4CAF50;
+        }
+        .summary.failure {
+            background: #b71c1c;
+            color: #f44336;
+        }
+        #results {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Transaction History & Audit Trail Test Suite</h1>
+    
+    <div class="container">
+        <h2>Test Controls</h2>
+        <button onclick="runAllTests()" id="runBtn">Run All Tests</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div class="container">
+        <h2>Test Results</h2>
+        <div id="results"></div>
+        <div id="summary"></div>
+    </div>
+
+    <script type="module">
+        // Import the transaction DB module
+        import { transactionDB } from './src/services/transactionDB.js';
+
+        let testsPassed = 0;
+        let testsFailed = 0;
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateSummary() {
+            const summary = document.getElementById('summary');
+            const total = testsPassed + testsFailed;
+            const success = testsFailed === 0 && total > 0;
+            
+            summary.className = `summary ${success ? 'success' : 'failure'}`;
+            summary.innerHTML = `
+                <div>Tests Run: ${total}</div>
+                <div>✓ Passed: ${testsPassed}</div>
+                <div>✗ Failed: ${testsFailed}</div>
+            `;
+        }
+
+        async function runTest(name, testFn) {
+            log(`Running: ${name}`, 'info');
+            try {
+                await testFn();
+                log(`✓ PASSED: ${name}`, 'pass');
+                testsPassed++;
+            } catch (error) {
+                log(`✗ FAILED: ${name} - ${error.message}`, 'fail');
+                testsFailed++;
+            }
+        }
+
+        window.runAllTests = async function() {
+            const btn = document.getElementById('runBtn');
+            btn.disabled = true;
+            testsPassed = 0;
+            testsFailed = 0;
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('summary').innerHTML = '';
+
+            log('═══════════════════════════════════════', 'info');
+            log('Starting Test Suite', 'info');
+            log('═══════════════════════════════════════', 'info');
+
+            try {
+                // Test 1: Initialize database
+                await runTest('Initialize Database', async () => {
+                    await transactionDB.init();
+                    if (!transactionDB) throw new Error('DB not initialized');
+                });
+
+                // Test 2: Add single transaction
+                await runTest('Add Single Transaction', async () => {
+                    const tx = {
+                        id: 'test_tx_1',
+                        type: 'payment',
+                        amount: '100',
+                        asset: 'XLM',
+                        timestamp: Date.now(),
+                        status: 'confirmed',
+                        from: 'GABC123',
+                        to: 'GDEF456',
+                        syncedAt: Date.now(),
+                    };
+                    await transactionDB.addTransaction(tx);
+                    const retrieved = await transactionDB.getTransaction('test_tx_1');
+                    if (!retrieved || retrieved.id !== 'test_tx_1') {
+                        throw new Error('Transaction not retrieved correctly');
+                    }
+                });
+
+                // Test 3: Add multiple transactions
+                await runTest('Add Multiple Transactions', async () => {
+                    const bulkTxs = Array.from({ length: 10 }, (_, i) => ({
+                        id: `bulk_tx_${i}`,
+                        type: ['payment', 'token', 'nft'][i % 3],
+                        amount: String((i + 1) * 10),
+                        asset: ['XLM', 'USDC', 'BTC'][i % 3],
+                        timestamp: Date.now() - i * 1000,
+                        status: 'confirmed',
+                        syncedAt: Date.now(),
+                    }));
+                    await transactionDB.addTransactions(bulkTxs);
+                    const allTxs = await transactionDB.getAllTransactions();
+                    if (allTxs.length < 10) {
+                        throw new Error(`Expected at least 10 transactions, got ${allTxs.length}`);
+                    }
+                });
+
+                // Test 4: Query by type
+                await runTest('Query by Type', async () => {
+                    const paymentTxs = await transactionDB.getTransactionsByType('payment');
+                    if (paymentTxs.length === 0) {
+                        throw new Error('No payment transactions found');
+                    }
+                    log(`  Found ${paymentTxs.length} payment transactions`, 'info');
+                });
+
+                // Test 5: Query by asset
+                await runTest('Query by Asset', async () => {
+                    const xlmTxs = await transactionDB.getTransactionsByAsset('XLM');
+                    if (xlmTxs.length === 0) {
+                        throw new Error('No XLM transactions found');
+                    }
+                    log(`  Found ${xlmTxs.length} XLM transactions`, 'info');
+                });
+
+                // Test 6: Query by date range
+                await runTest('Query by Date Range', async () => {
+                    const now = Date.now();
+                    const oneHourAgo = now - 3600000;
+                    const recentTxs = await transactionDB.getTransactionsByDateRange(oneHourAgo, now);
+                    if (recentTxs.length === 0) {
+                        throw new Error('No transactions in date range');
+                    }
+                    log(`  Found ${recentTxs.length} transactions in range`, 'info');
+                });
+
+                // Test 7: Get latest transaction
+                await runTest('Get Latest Transaction', async () => {
+                    const latest = await transactionDB.getLatestTransaction();
+                    if (!latest) {
+                        throw new Error('No latest transaction found');
+                    }
+                    log(`  Latest transaction: ${latest.id}`, 'info');
+                });
+
+                // Test 8: Update transaction
+                await runTest('Update Transaction', async () => {
+                    const tx = {
+                        id: 'test_tx_1',
+                        type: 'payment',
+                        amount: '100',
+                        asset: 'XLM',
+                        timestamp: Date.now(),
+                        status: 'failed',
+                        syncedAt: Date.now(),
+                    };
+                    await transactionDB.addTransaction(tx);
+                    const updated = await transactionDB.getTransaction('test_tx_1');
+                    if (!updated || updated.status !== 'failed') {
+                        throw new Error('Transaction not updated');
+                    }
+                });
+
+                // Test 9: Compound index queries
+                await runTest('Compound Index Queries', async () => {
+                    const payments = await transactionDB.getTransactionsByType('payment');
+                    const xlmTxs = await transactionDB.getTransactionsByAsset('XLM');
+                    if (payments.length === 0 || xlmTxs.length === 0) {
+                        throw new Error('Compound index queries failed');
+                    }
+                });
+
+                // Test 10: Clear database
+                await runTest('Clear Database', async () => {
+                    await transactionDB.clearAll();
+                    const afterClear = await transactionDB.getAllTransactions();
+                    if (afterClear.length !== 0) {
+                        throw new Error(`Expected 0 transactions, got ${afterClear.length}`);
+                    }
+                });
+
+                log('═══════════════════════════════════════', 'info');
+                log('Test Suite Complete', 'info');
+                log('═══════════════════════════════════════', 'info');
+
+            } catch (error) {
+                log(`Fatal Error: ${error.message}`, 'fail');
+                testsFailed++;
+            } finally {
+                updateSummary();
+                btn.disabled = false;
+                transactionDB.close();
+            }
+        };
+
+        window.clearResults = function() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('summary').innerHTML = '';
+            testsPassed = 0;
+            testsFailed = 0;
+        };
+
+        // Auto-run tests on load
+        window.addEventListener('load', () => {
+            log('Page loaded. Click "Run All Tests" to begin.', 'info');
+        });
+    </script>
+</body>
+</html>
