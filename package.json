@@ -7,7 +7,8 @@
     "dev": "npx vite",
     "build": "tsc && npx vite build",
     "preview": "npx vite preview",
-    "electron:dev": "concurrently \"npm run dev\" \"npx wait-on tcp:5173 && npx electron .\"",
+    "electron:dev": "concurrently \"npm run dev\" \"npm run backend:dev\" \"npx wait-on tcp:5173 tcp:3001 && npx electron .\"",
+    "backend:dev": "cd backend && npm run dev",
     "electron:build": "npx vite build && electron-builder"
   },
   "keywords": [],
