@@ -12,6 +12,7 @@ This document provides comprehensive API documentation for all SocialFlow servic
 2. [Type Definitions](#type-definitions)
 3. [Error Handling](#error-handling)
 4. [Best Practices](#best-practices)
+5. [Webhooks](#webhooks)
 
 ---
 
@@ -435,6 +436,54 @@ async function getCachedCaption(topic: string, platform: string) {
   const caption = await generateCaption(topic, platform);
   cache.set(key, caption);
   return caption;
+}
+```
+
+---
+
+## Webhooks
+
+**Module:** `src/schemas/webhooks.ts`
+
+To ensure consistency across the ecosystem, all incoming and outgoing webhooks follow a standardized JSON schema and TypeScript interfaces.
+
+### Standard Webhook Payload
+
+All webhooks share a standard envelope containing metadata about the event and a `data` field for the specific payload.
+
+```typescript
+interface WebhookEvent<T = any> {
+  id: string;                    // Unique identifier for the webhook event
+  version: string;               // Schema version (e.g., '1.0')
+  event: string;                 // The event type identifier
+  createdAt: string;             // ISO 8601 timestamp
+  source: string;                // Source system generating the event
+  data: T;                       // The event-specific payload
+}
+```
+
+### Supported Event Types
+
+- `post.published`: Emitted when a scheduled post goes live.
+- `post.failed`: Emitted when a post fails to publish.
+- `analytics.report_ready`: Emitted when an async analytics report is generated.
+- `blockchain.transaction_completed`: Emitted when a Stellar/Soroban transaction confirms.
+
+### Example Payload
+
+```json
+{
+  "id": "wh_1234567890",
+  "version": "1.0",
+  "event": "post.published",
+  "createdAt": "2026-03-24T10:00:00Z",
+  "source": "socialflow-core",
+  "data": {
+    "postId": "post_123",
+    "platform": "instagram",
+    "url": "https://instagram.com/p/123456",
+    "publishedAt": "2026-03-24T10:00:00Z"
+  }
 }
 ```
 
