@@ -46,6 +46,9 @@ app.use('/api/facebook', facebookRoutes);
 import exportsRoutes from './routes/exports';
 app.use('/api/exports', exportsRoutes);
 
+import imagesRoutes from './routes/images';
+app.use('/api/images', imagesRoutes);
+
 // 404 handler - must be after all routes
 app.use(notFoundHandler);
 
