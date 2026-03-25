@@ -1,24 +1,42 @@
+import { HealthMonitor, HealthMetrics } from './healthMonitor';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('healthService');
+
 class HealthService {
+  private healthMonitor?: HealthMonitor;
+  private failureCounters: Map<string, number> = new Map();
+
+  setHealthMonitor(monitor: HealthMonitor): void {
+    this.healthMonitor = monitor;
+  }
+
   /**
    * Helper function to simulate a latency check.
    */
-  private async simulateCheck(serviceName: string, baseLatency: number): Promise<{ status: string; latency: number; lastChecked: string }> {
+  private async simulateCheck(
+    serviceName: string,
+    baseLatency: number
+  ): Promise<{ status: string; latency: number; lastChecked: string; errorRate: number }> {
     const latency = baseLatency + Math.floor(Math.random() * 20);
     // Simulate delay
     await new Promise((resolve) => setTimeout(resolve, latency));
 
     // Simulate occasional unhealthy for Twitter
-    if (serviceName === 'twitter' && Math.random() < 0.2) {
-        return {
-          status: 'unhealthy',
-          latency: latency,
-          lastChecked: new Date().toISOString(),
-        };
+    const isUnhealthy = serviceName === 'twitter' && Math.random() < 0.2;
+    const errorRate = isUnhealthy ? Math.random() * 30 : Math.random() * 2;
+
+    if (isUnhealthy) {
+      const counter = (this.failureCounters.get(serviceName) || 0) + 1;
+      this.failureCounters.set(serviceName, counter);
+    } else {
+      this.failureCounters.set(serviceName, 0);
     }
 
     return {
-      status: 'healthy',
+      status: isUnhealthy ? 'unhealthy' : 'healthy',
       latency,
+      errorRate,
       lastChecked: new Date().toISOString(),
     };
   }
@@ -48,13 +66,29 @@ class HealthService {
     ]);
 
     const dependencies = { database, redis, s3, twitter };
-    
+
     const isUnhealthy = Object.values(dependencies).some((dep) => dep.status !== 'healthy');
     const overallStatus = isUnhealthy ? 'unhealthy' : 'healthy';
 
+    // Record metrics for monitoring
+    if (this.healthMonitor) {
+      await Promise.all(
+        Object.entries(dependencies).map(([service, metric]) =>
+          this.healthMonitor!.recordMetric({
+            service,
+            status: metric.status as 'healthy' | 'unhealthy',
+            latency: metric.latency,
+            errorRate: metric.errorRate,
+            consecutiveFailures: this.failureCounters.get(service) || 0,
+            lastChecked: metric.lastChecked,
+          })
+        )
+      );
+    }
+
     return {
       dependencies,
-      overallStatus
+      overallStatus,
     };
   }
 }

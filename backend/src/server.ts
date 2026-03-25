@@ -6,6 +6,8 @@ import { getBackendPort } from './config/runtime';
 import { startDataPruningJob, stopDataPruningJob } from './jobs/dataPruningJob';
 import { startYouTubeSyncJob, stopYouTubeSyncJob } from './jobs/youtubeSyncJob';
 import { startWorkerMonitor, stopWorkerMonitor } from './monitoring/workerMonitorInstance';
+import { startHealthMonitoringJob, stopHealthMonitoringJob } from './jobs/healthMonitoringJob';
+import { initializeHealthMonitoring } from './monitoring/healthMonitoringInstance';
 import { createLogger } from './lib/logger';
 import { prisma } from './lib/prisma';
 import { startWebhookWorker } from './queues/WebhookQueue';
@@ -61,6 +63,16 @@ const gracefulShutdown = async (signal: string, exitCode: number = 0): Promise<v
       logger.info('Worker monitor stopped');
     } catch (error) {
       logger.error('Failed to stop worker monitor', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Stop health monitoring job
+    try {
+      await stopHealthMonitoringJob();
+      logger.info('Health monitoring job stopped');
+    } catch (error) {
+      logger.error('Failed to stop health monitoring job', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -181,12 +193,32 @@ const bootstrap = async (): Promise<void> => {
     logger.info('Initializing job queue workers...');
     initializeWorkers();
 
+    // Initialize health monitoring
+    try {
+      initializeHealthMonitoring();
+      logger.info('Health monitoring initialized');
+    } catch (error) {
+      logger.error('Failed to initialize health monitoring', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     // Start worker monitor
     try {
       await startWorkerMonitor();
       logger.info('Worker monitor started');
     } catch (error) {
       logger.error('Failed to start worker monitor', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Start health monitoring job
+    try {
+      await startHealthMonitoringJob();
+      logger.info('Health monitoring job started');
+    } catch (error) {
+      logger.error('Failed to start health monitoring job', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
