@@ -8,6 +8,7 @@ import { requestIdMiddleware } from './middleware/requestId';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import webhookRoutes from './routes/webhooks';
 import realtimeRoutes from './routes/realtime';
+import ttsRoutes from './routes/tts';
 
 const app: Application = express();
 
