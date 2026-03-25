@@ -1,0 +1,158 @@
+import { prisma } from '../lib/prisma';
+
+export enum ConfigKey {
+  RATE_LIMIT_MAX = 'RATE_LIMIT_MAX',
+  RATE_LIMIT_WINDOW_MS = 'RATE_LIMIT_WINDOW_MS',
+  FEATURE_SENTIMENT_ANALYSIS = 'FEATURE_SENTIMENT_ANALYSIS',
+  FEATURE_AI_GENERATOR = 'FEATURE_AI_GENERATOR',
+  MAINTENANCE_MODE = 'MAINTENANCE_MODE',
+  CACHE_TTL = 'CACHE_TTL',
+}
+
+export type ConfigType = 'string' | 'number' | 'boolean' | 'json';
+
+export class DynamicConfigService {
+  private cache: Map<string, any> = new Map();
+  private pollingInterval: any = null;
+  private isPollingActive: boolean = false;
+
+  private lastRefreshTimestamp: Date | null = null;
+
+  constructor(private refreshIntervalMs: number = 60000) { // Default 1 minute
+    this.refreshCache().catch(console.error);
+    this.startPolling();
+  }
+
+  /**
+   * Starts periodic polling of the database for configuration changes.
+   */
+  public startPolling(): void {
+    if (this.pollingInterval) return;
+    
+    this.pollingInterval = setInterval(async () => {
+      await this.refreshCache();
+    }, this.refreshIntervalMs);
+  }
+
+  /**
+   * Stops the polling interval.
+   */
+  public stopPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+  }
+
+  /**
+   * Fetches all configuration from the database and updates the in-memory cache.
+   */
+  public async refreshCache(): Promise<void> {
+    if (this.isPollingActive) return;
+    this.isPollingActive = true;
+
+    try {
+      // Note: We use the prisma client. 
+      // Ensure the DynamicConfig table exists after the migration.
+      const configs = await (prisma as any).dynamicConfig.findMany();
+      
+      this.cache.clear();
+      for (const config of configs) {
+        this.cache.set(config.key, this.parseValue(config.value, config.type as ConfigType));
+      }
+      
+      this.lastRefreshTimestamp = new Date();
+      console.log(`[DynamicConfigService] Cache refreshed at ${this.lastRefreshTimestamp.toISOString()}. Loaded ${configs.length} configs.`);
+    } catch (error) {
+      // If table doesn't exist yet, we just log it. In a real environment, 
+      // migrations would handle this before the service starts.
+      console.error('[DynamicConfigService] Failed to refresh config cache:', (error as Error).message);
+    } finally {
+      this.isPollingActive = false;
+    }
+  }
+
+  /**
+   * Gets a configuration value by key.
+   * @param key The configuration key
+   * @param defaultValue Optional default value if the key is not found
+   */
+  public get<T>(key: ConfigKey | string, defaultValue?: T): T {
+    if (this.cache.has(key)) {
+      return this.cache.get(key) as T;
+    }
+    
+    if (defaultValue !== undefined) {
+      return defaultValue;
+    }
+
+    // Return a default if not found in cache and no defaultValue provided
+    // This allows the app to function even if the DB is empty
+    return this.getHardcodedDefault(key) as unknown as T;
+  }
+
+  /**
+   * Sets a configuration value in both database and cache.
+   */
+  public async set(key: ConfigKey | string, value: any, type: ConfigType = 'string', description?: string): Promise<void> {
+    const stringValue = type === 'json' ? JSON.stringify(value) : String(value);
+
+    await (prisma as any).dynamicConfig.upsert({
+      where: { key },
+      update: { value: stringValue, type, description },
+      create: { key, value: stringValue, type, description },
+    });
+
+    // Update local cache immediately
+    this.cache.set(key, this.parseValue(stringValue, type));
+  }
+
+  /**
+   * Parses the string value from the database based on its type.
+   */
+  private parseValue(value: string, type: ConfigType): any {
+    switch (type) {
+      case 'number':
+        return Number(value);
+      case 'boolean':
+        return value.toLowerCase() === 'true';
+      case 'json':
+        try {
+          return JSON.parse(value);
+        } catch (e) {
+          console.error(`[DynamicConfigService] Failed to parse JSON value for config: ${value}`, e);
+          return null;
+        }
+      case 'string':
+      default:
+        return value;
+    }
+  }
+
+  /**
+   * Provides hardcoded defaults for common keys in case the DB is not yet populated.
+   */
+  private getHardcodedDefault(key: ConfigKey | string): any {
+    const defaults: Record<string, any> = {
+      [ConfigKey.RATE_LIMIT_MAX]: 100,
+      [ConfigKey.RATE_LIMIT_WINDOW_MS]: 15 * 60 * 1000,
+      [ConfigKey.FEATURE_SENTIMENT_ANALYSIS]: true,
+      [ConfigKey.FEATURE_AI_GENERATOR]: true,
+      [ConfigKey.MAINTENANCE_MODE]: false,
+      [ConfigKey.CACHE_TTL]: 3600,
+    };
+    return defaults[key] ?? null;
+  }
+
+  public getStatus() {
+    return {
+      lastRefresh: this.lastRefreshTimestamp,
+      isPolling: !!this.pollingInterval,
+      keysCachedCount: this.cache.size,
+      cachedKeys: Array.from(this.cache.keys()),
+    };
+  }
+}
+
+// Export a singleton instance
+export const dynamicConfigService = new DynamicConfigService();

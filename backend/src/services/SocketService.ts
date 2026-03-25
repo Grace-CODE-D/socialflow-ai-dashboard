@@ -3,6 +3,9 @@ import { Server as HttpServer } from 'http';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import jwt from 'jsonwebtoken';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('SocketService');
 
 interface AuthenticatedSocket extends Socket {
   user?: any; // Define user format matching your JWT payload
@@ -12,7 +15,7 @@ export class SocketService {
   private static instance: SocketService;
   private io?: Server;
 
-  private constructor() {}
+  private constructor() { }
 
   /**
    * Returns the singleton instance of the SocketService
@@ -61,24 +64,24 @@ export class SocketService {
     });
 
     this.io.on('connection', (socket: AuthenticatedSocket) => {
-      console.log(`[Socket] Authorized connection from ${socket.id}`);
+      logger.info(`Authorized connection from ${socket.id}`);
 
       // Auto-join specific namespace or org-based rooms based on client query
       const orgId = socket.handshake.query.orgId as string;
       if (orgId) {
         const roomName = `org:${orgId}`;
         socket.join(roomName);
-        console.log(`[Socket] Client ${socket.id} joined room ${roomName}`);
+        logger.info(`Client ${socket.id} joined room ${roomName}`);
       }
 
       // Handle message events dynamically
       socket.on('message', (payload) => {
-        console.log(`[Socket] Message from ${socket.id}:`, payload);
+        logger.info(`Message from ${socket.id}`, { payload });
         // Relay message or process it
         if (orgId) {
-           this.io?.to(`org:${orgId}`).emit('message', { ...payload, from: socket.user });
+          this.io?.to(`org:${orgId}`).emit('message', { ...payload, from: socket.user });
         } else {
-           this.io?.emit('message', { ...payload, from: socket.user });
+          this.io?.emit('message', { ...payload, from: socket.user });
         }
       });
 
@@ -93,7 +96,7 @@ export class SocketService {
       });
 
       socket.on('disconnect', () => {
-        console.log(`[Socket] Client disconnected: ${socket.id}`);
+        logger.info(`Client disconnected: ${socket.id}`);
       });
     });
   }

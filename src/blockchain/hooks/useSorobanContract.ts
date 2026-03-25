@@ -3,6 +3,8 @@ import { SmartContractService } from '../services/SmartContractService';
 import { walletService, WalletInfo } from '../services/WalletService';
 import { ContractCallType, ContractInvocationResult } from '../types/soroban';
 import { xdr } from '@stellar/stellar-sdk';
+import { AppError } from '../../utils/AppError';
+import { ErrorCode } from '../../constants/ErrorCodes';
 
 /**
  * React hook for Soroban contract interactions
@@ -26,7 +28,7 @@ export function useSorobanContract(
         try {
             const connectedWallet = await walletService.autoConnect();
             if (!connectedWallet) {
-                throw new Error('No wallet available. Please install Freighter or Albedo.');
+                throw new AppError(ErrorCode.ERR_WALLET_NOT_AVAILABLE, 'No wallet available. Please install Freighter or Albedo.');
             }
 
             setWallet(connectedWallet);
@@ -54,7 +56,7 @@ export function useSorobanContract(
     const readContract = useCallback(
         async (method: string, args: xdr.ScVal[] = []): Promise<any> => {
             if (!wallet) {
-                throw new Error('Wallet not connected');
+                throw new AppError(ErrorCode.ERR_WALLET_NOT_CONNECTED);
             }
 
             setIsLoading(true);
@@ -68,12 +70,12 @@ export function useSorobanContract(
                 );
 
                 if (!result.success) {
-                    throw new Error(result.error || 'Contract call failed');
+                    throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, result.error || 'Contract call failed');
                 }
 
                 return result.result;
             } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : 'Contract call failed';
+                const errorMessage = AppError.isAppError(err) ? err.message : (err instanceof Error ? err.message : 'Contract call failed');
                 setError(errorMessage);
                 throw err;
             } finally {
@@ -89,15 +91,15 @@ export function useSorobanContract(
     const writeContract = useCallback(
         async (method: string, args: xdr.ScVal[] = []): Promise<ContractInvocationResult> => {
             if (!wallet) {
-                throw new Error('Wallet not connected');
+                throw new AppError(ErrorCode.ERR_WALLET_NOT_CONNECTED);
             }
 
             setIsLoading(true);
             setError(null);
 
             try {
-                const signTransaction = async (xdr: string) => {
-                    return await walletService.signTransaction(xdr, network.toLowerCase());
+                const signTransaction = async (xdrString: string) => {
+                    return await walletService.signTransaction(xdrString, network.toLowerCase());
                 };
 
                 const result = await contractService.invoke(
@@ -113,17 +115,17 @@ export function useSorobanContract(
 
                     // Provide user-friendly error messages
                     if (result.errorType === 'OUT_OF_GAS') {
-                        throw new Error('Transaction ran out of gas. Please try again with higher limits.');
+                        throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, 'Transaction ran out of gas. Please try again with higher limits.');
                     } else if (result.errorType === 'SIMULATION_FAILED') {
-                        throw new Error(`Simulation failed: ${errorMessage}`);
+                        throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, `Simulation failed: ${errorMessage}`);
                     } else {
-                        throw new Error(errorMessage);
+                        throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, errorMessage);
                     }
                 }
 
                 return result;
             } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
+                const errorMessage = AppError.isAppError(err) ? err.message : (err instanceof Error ? err.message : 'Transaction failed');
                 setError(errorMessage);
                 throw err;
             } finally {
@@ -139,7 +141,7 @@ export function useSorobanContract(
     const simulateContract = useCallback(
         async (method: string, args: xdr.ScVal[] = []) => {
             if (!wallet) {
-                throw new Error('Wallet not connected');
+                throw new AppError(ErrorCode.ERR_WALLET_NOT_CONNECTED);
             }
 
             setIsLoading(true);
@@ -152,12 +154,12 @@ export function useSorobanContract(
                 );
 
                 if (!result.success) {
-                    throw new Error(result.error || 'Simulation failed');
+                    throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, result.error || 'Simulation failed');
                 }
 
                 return result;
             } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : 'Simulation failed';
+                const errorMessage = AppError.isAppError(err) ? err.message : (err instanceof Error ? err.message : 'Simulation failed');
                 setError(errorMessage);
                 throw err;
             } finally {

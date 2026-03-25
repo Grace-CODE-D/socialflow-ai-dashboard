@@ -3,6 +3,8 @@ import { Card } from './Card';
 import { SponsoredBadge } from './SponsoredBadge';
 import { blockchainService } from '../../services/blockchainService';
 import { PaymentTransaction, SponsorshipTier, WalletConnection } from '../../types';
+import { AppError } from '../../src/utils/AppError';
+import { ErrorCode } from '../../src/constants/ErrorCodes';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -26,6 +28,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [step, setStep] = useState<'select' | 'connect' | 'confirm' | 'processing' | 'success'>('select');
 
   const tiers = blockchainService.getSponsorshipTiers();
@@ -35,12 +38,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setWallet(blockchainService.getWalletStatus());
       setStep(blockchainService.getWalletStatus().isConnected ? 'select' : 'connect');
       setError(null);
+      setErrorCode(null);
     }
   }, [isOpen]);
 
   const handleConnectWallet = async () => {
     setIsConnecting(true);
     setError(null);
+    setErrorCode(null);
     
     try {
       const connection = await blockchainService.connectWallet();
@@ -48,6 +53,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setStep('select');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to connect wallet');
+      if (AppError.isAppError(err)) {
+        setErrorCode(err.code);
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -56,6 +64,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const handlePayment = async () => {
     setIsProcessing(true);
     setError(null);
+    setErrorCode(null);
     setStep('processing');
 
     try {
@@ -65,7 +74,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       // Lock funds in treasury
       const fundsLocked = await blockchainService.lockFundsInTreasury(transaction.amount);
       if (!fundsLocked) {
-        throw new Error('Failed to lock funds in treasury');
+        throw new AppError(ErrorCode.ERR_INSUFFICIENT_FUNDS, 'Failed to lock funds in treasury');
       }
 
       // Submit transaction
@@ -78,10 +87,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           onClose();
         }, 2000);
       } else {
-        throw new Error('Transaction failed');
+        throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, 'Transaction failed');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed');
+      if (AppError.isAppError(err)) {
+        setErrorCode(err.code);
+      }
       setStep('confirm');
     } finally {
       setIsProcessing(false);
@@ -109,7 +121,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
             <div className="flex items-center gap-2 text-red-400 text-sm">
               <MaterialIcon name="error" className="text-sm" />
-              {error}
+              <div className="flex flex-col">
+                <span className="font-semibold">{errorCode || 'Error'}:</span>
+                <span>{error}</span>
+              </div>
             </div>
           </div>
         )}

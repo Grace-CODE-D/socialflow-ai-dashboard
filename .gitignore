@@ -55,3 +55,7 @@ coverage
 # Prisma
 prisma/dev.db
 prisma/dev.db-journal
+
+# Uploads
+uploads/
+backend/uploads/

@@ -149,7 +149,7 @@ export class SmartContractService {
             if (!signTransaction) {
                 return {
                     success: false,
-                    error: 'Sign transaction function required for state-changing calls',
+                    error: 'ERR_AUTH_REQUIRED: Sign transaction function required for state-changing calls',
                     errorType: 'TRANSACTION_FAILED',
                 };
             }

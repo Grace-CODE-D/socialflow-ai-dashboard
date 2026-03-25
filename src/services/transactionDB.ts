@@ -1,3 +1,6 @@
+import { AppError } from '../utils/AppError';
+import { ErrorCode } from '../constants/ErrorCodes';
+
 // IndexedDB Schema for Transaction History
 const DB_NAME = 'SocialFlowTransactions';
 const DB_VERSION = 1;
@@ -58,7 +61,7 @@ class TransactionDB {
   }
 
   async addTransaction(tx: TransactionRecord): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
@@ -71,7 +74,7 @@ class TransactionDB {
   }
 
   async addTransactions(txs: TransactionRecord[]): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
@@ -85,7 +88,7 @@ class TransactionDB {
   }
 
   async getTransaction(id: string): Promise<TransactionRecord | undefined> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -98,7 +101,7 @@ class TransactionDB {
   }
 
   async getAllTransactions(): Promise<TransactionRecord[]> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -111,7 +114,7 @@ class TransactionDB {
   }
 
   async getTransactionsByType(type: string): Promise<TransactionRecord[]> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -125,7 +128,7 @@ class TransactionDB {
   }
 
   async getTransactionsByAsset(asset: string): Promise<TransactionRecord[]> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -139,7 +142,7 @@ class TransactionDB {
   }
 
   async getTransactionsByDateRange(from: number, to: number): Promise<TransactionRecord[]> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -154,7 +157,7 @@ class TransactionDB {
   }
 
   async getLatestTransaction(): Promise<TransactionRecord | undefined> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readonly');
@@ -171,7 +174,7 @@ class TransactionDB {
   }
 
   async clearAll(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([STORE_NAME], 'readwrite');

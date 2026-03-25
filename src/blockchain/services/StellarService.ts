@@ -3,6 +3,8 @@ import StellarSdk from '@stellar/stellar-sdk';
 const { Server, TransactionBuilder, Asset, Operation, Transaction, FeeBumpTransaction } = StellarSdk;
 import { NetworkConfig, DEFAULT_NETWORK } from '../config/networks';
 import { OfflineQueue } from './OfflineQueue.ts';
+import { AppError } from '../../utils/AppError';
+import { ErrorCode } from '../../constants/ErrorCodes';
 
 export class StellarService {
   private config: NetworkConfig;
@@ -58,7 +60,7 @@ export class StellarService {
     try {
       return await this.getServer().loadAccount(publicKey);
     } catch (error) {
-      throw new Error(`Account not found or invalid: ${publicKey}`);
+      throw new AppError(ErrorCode.ERR_NOT_FOUND, `Account not found or invalid: ${publicKey}`);
     }
   }
 
@@ -112,7 +114,9 @@ export class StellarService {
   public parseAsset(assetString: string): typeof Asset {
     if (assetString.toLowerCase() === 'xlm' || assetString.toLowerCase() === 'native') return Asset.native();
     const [code, issuer] = assetString.split(':');
-    if (!code || !issuer || code.length > 12) throw new Error("Invalid asset format. Use CODE:ISSUER");
+    if (!code || !issuer || code.length > 12) {
+        throw new AppError(ErrorCode.ERR_INVALID_FORMAT, "Invalid asset format. Use CODE:ISSUER");
+    }
     return new Asset(code, issuer);
   }
 
@@ -130,8 +134,8 @@ export class StellarService {
 
   // --- 2.4 & 2.8 Transaction Submission, Offline Queue & Retries ---
   public async queueForOffline(tx: typeof Transaction | typeof FeeBumpTransaction) {
-    const xdr = tx.toXDR();
-    return await this.offlineQueue.queueTransaction(xdr);
+    const xdrString = tx.toXDR();
+    return await this.offlineQueue.queueTransaction(xdrString);
   }
 
   public async submitTransaction(signedTransaction: typeof Transaction | typeof FeeBumpTransaction, maxAttempts = 3): Promise<any> {
@@ -143,7 +147,7 @@ export class StellarService {
       } catch (error: any) {
         if (attempt === maxAttempts) {
           console.error("Tx failed after max retries.");
-          throw error;
+          throw new AppError(ErrorCode.ERR_MAX_RETRIES_EXCEEDED, error.message || 'Transaction submission failed after maximum retries');
         }
         // Exponential backoff
         const delay = Math.pow(2, attempt) * 1000;

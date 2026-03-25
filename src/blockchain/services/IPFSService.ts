@@ -1,3 +1,6 @@
+import { AppError } from '../../utils/AppError';
+import { ErrorCode } from '../../constants/ErrorCodes';
+
 /* IPFSService
    Provides upload/download/pinning/caching helper for IPFS providers
 */
@@ -168,7 +171,7 @@ export class IPFSService {
       const form = new FormData()
       form.append('file', file, file.name)
       const res = await retryWithBackoff(() => fetch(info.uploadUrl!, { method: 'POST', headers: { Authorization: info.authHeader || '' }, body: form }), 3)
-      if (!res.ok) throw new Error(`Upload failed ${res.status}`)
+      if (!res.ok) throw new AppError(ErrorCode.ERR_NETWORK_ERROR, `Upload failed ${res.status}`)
       const data = await res.json()
       // web3.storage returns cid in `cid`
       const cid = data.cid || (data[0] && data[0].cid) || ''
@@ -186,7 +189,7 @@ export class IPFSService {
         headers['Authorization'] = `Bearer ${this.config.apiKey}`
       }
       const res = await retryWithBackoff(() => fetch(info.uploadUrl!, { method: 'POST', headers, body: form }), 3)
-      if (!res.ok) throw new Error(`Upload failed ${res.status}`)
+      if (!res.ok) throw new AppError(ErrorCode.ERR_NETWORK_ERROR, `Upload failed ${res.status}`)
       const data = await res.json()
       const cid = data.IpfsHash || data.ipfsHash || ''
       const gatewayUrl = this.getFileUrl(cid)
@@ -221,7 +224,7 @@ export class IPFSService {
       if (info.authHeader) headers['Authorization'] = info.authHeader
       headers['Content-Type'] = 'application/octet-stream'
       const res = await retryWithBackoff(() => fetch(info.uploadUrl!, { method: 'POST', headers, body: stream as any }), 3)
-      if (!res.ok) throw new Error(`Upload failed ${res.status}`)
+      if (!res.ok) throw new AppError(ErrorCode.ERR_NETWORK_ERROR, `Upload failed ${res.status}`)
       const data = await res.json()
       const cid = data.cid || ''
       return { cid, size: file.size, gatewayUrl: this.getFileUrl(cid) }
@@ -233,7 +236,7 @@ export class IPFSService {
 
   async uploadJSON(metadata: any): Promise<{ cid: string; uri: string }> {
     // Validate JSON: must be object
-    if (typeof metadata !== 'object' || metadata === null) throw new Error('Invalid metadata')
+    if (typeof metadata !== 'object' || metadata === null) throw new AppError(ErrorCode.ERR_BAD_REQUEST, 'Invalid metadata')
     const info = this.getProviderInfo()
     if (this.config.provider === 'web3') {
       const headers: any = { Authorization: info.authHeader || '', 'Content-Type': 'application/json' }
@@ -307,7 +310,7 @@ export class IPFSService {
         lastErr = err
       }
     }
-    throw lastErr || new Error('All gateways failed')
+    throw lastErr || new AppError(ErrorCode.ERR_NETWORK_ERROR, 'All gateways failed')
   }
 
   async getFile(cid: string): Promise<Blob> {
@@ -329,7 +332,7 @@ export class IPFSService {
     try {
       return JSON.parse(text)
     } catch (e) {
-      throw new Error('Invalid JSON')
+      throw new AppError(ErrorCode.ERR_INVALID_FORMAT, 'Invalid JSON')
     }
   }
 
@@ -384,7 +387,7 @@ export class IPFSService {
         headers['Authorization'] = `Bearer ${this.config.apiKey}`
       }
       const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ hashToPin: cid }) })
-      if (!res.ok) throw new Error('Pin failed')
+      if (!res.ok) throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, 'Pin failed')
       await idbPut('pins', { cid, pinned: true, provider: 'pinata', updatedAt: Date.now() })
       return true
     } else {
@@ -404,7 +407,7 @@ export class IPFSService {
         headers['pinata_secret_api_key'] = this.config.secret
       } else if (this.config.apiKey) headers['Authorization'] = `Bearer ${this.config.apiKey}`
       const res = await fetch(url, { method: 'DELETE', headers })
-      if (!res.ok) throw new Error('Unpin failed')
+      if (!res.ok) throw new AppError(ErrorCode.ERR_TRANSACTION_FAILED, 'Unpin failed')
       await idbPut('pins', { cid, pinned: false, provider: 'pinata', updatedAt: Date.now() })
       return true
     } else {
