@@ -1,7 +1,6 @@
+import 'reflect-metadata';
 import { Router } from 'express';
-import { healthService } from '../services/healthService';
-import { getHealthMonitor } from '../monitoring/healthMonitoringInstance';
-import { alertConfigService } from '../services/alertConfigService';
+import { getHealthService, getHealthMonitor, getAlertConfigService } from '../services/serviceFactory';
 
 const router = Router();
 
@@ -11,6 +10,7 @@ const router = Router();
  */
 router.get('/status', async (req, res) => {
   try {
+    const healthService = getHealthService();
     const status = await healthService.getSystemStatus();
     res.json(status);
   } catch (error) {
@@ -61,6 +61,7 @@ router.get('/metrics/:service', (req, res) => {
  */
 router.get('/config', (req, res) => {
   try {
+    const alertConfigService = getAlertConfigService();
     const services = ['database', 'redis', 's3', 'twitter', 'youtube', 'facebook'];
     const config = Object.fromEntries(
       services.map((service) => [service, alertConfigService.getConfig(service)])
@@ -79,6 +80,7 @@ router.get('/config', (req, res) => {
  */
 router.put('/config/:service', (req, res) => {
   try {
+    const alertConfigService = getAlertConfigService();
     const { service } = req.params;
     const config = req.body;
 

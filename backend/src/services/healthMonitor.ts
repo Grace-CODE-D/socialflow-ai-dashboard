@@ -1,6 +1,9 @@
+import 'reflect-metadata';
+import { injectable, inject } from 'inversify';
 import { createLogger } from '../lib/logger';
 import { NotificationManager } from './notificationProvider';
 import { alertConfigService } from './alertConfigService';
+import { TYPES } from '../config/inversify.config';
 
 const logger = createLogger('healthMonitor');
 
@@ -13,11 +16,12 @@ export interface HealthMetrics {
   lastChecked: string;
 }
 
+@injectable()
 export class HealthMonitor {
   private metrics: Map<string, HealthMetrics> = new Map();
   private notificationManager: NotificationManager;
 
-  constructor(notificationManager: NotificationManager) {
+  constructor(@inject(TYPES.NotificationManager) notificationManager: NotificationManager) {
     this.notificationManager = notificationManager;
   }
 

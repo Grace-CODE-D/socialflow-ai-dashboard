@@ -1,5 +1,6 @@
+import 'reflect-metadata';
 import { createLogger } from '../lib/logger';
-import { healthService } from '../services/healthService';
+import { getHealthService } from '../services/serviceFactory';
 
 const logger = createLogger('healthMonitoringJob');
 
@@ -11,6 +12,7 @@ export async function startHealthMonitoringJob(): Promise<void> {
   healthMonitoringInterval = setInterval(async () => {
     try {
       logger.debug('Running health check...');
+      const healthService = getHealthService();
       await healthService.getSystemStatus();
     } catch (error) {
       logger.error('Health monitoring job failed', {

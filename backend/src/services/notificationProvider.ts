@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+import { injectable } from 'inversify';
 import { createLogger } from '../lib/logger';
 
 const logger = createLogger('notificationProvider');
@@ -14,6 +16,7 @@ export interface NotificationProvider {
   send(alert: AlertPayload): Promise<void>;
 }
 
+@injectable()
 class SlackNotificationProvider implements NotificationProvider {
   private webhookUrl: string;
 
@@ -62,6 +65,7 @@ class SlackNotificationProvider implements NotificationProvider {
   }
 }
 
+@injectable()
 class PagerDutyNotificationProvider implements NotificationProvider {
   private integrationKey: string;
 
@@ -104,6 +108,7 @@ class PagerDutyNotificationProvider implements NotificationProvider {
   }
 }
 
+@injectable()
 export class NotificationManager {
   private providers: Map<string, NotificationProvider> = new Map();
 

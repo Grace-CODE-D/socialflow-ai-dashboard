@@ -1,4 +1,6 @@
+import 'reflect-metadata';
 import app from './app';
+import { container } from './config/inversify.config';
 import { SocketService } from './services/SocketService';
 import { initializeWorkers } from './jobs/workers';
 import { queueManager } from './queues/queueManager';

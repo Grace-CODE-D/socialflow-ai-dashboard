@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+import { injectable, singleton } from 'inversify';
 import { createLogger } from '../lib/logger';
 
 const logger = createLogger('alertConfig');
@@ -14,6 +16,8 @@ export interface ServiceAlertConfig {
   cooldownMs: number;
 }
 
+@injectable()
+@singleton()
 export class AlertConfigService {
   private configs: Map<string, ServiceAlertConfig> = new Map();
   private lastAlertTime: Map<string, number> = new Map();
@@ -70,5 +74,3 @@ export class AlertConfigService {
     this.lastAlertTime.set(service, Date.now());
   }
 }
-
-export const alertConfigService = new AlertConfigService();

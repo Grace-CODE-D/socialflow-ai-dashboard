@@ -1,11 +1,19 @@
+import 'reflect-metadata';
+import { injectable, inject, optional } from 'inversify';
 import { HealthMonitor, HealthMetrics } from './healthMonitor';
 import { createLogger } from '../lib/logger';
+import { TYPES } from '../config/inversify.config';
 
 const logger = createLogger('healthService');
 
+@injectable()
 class HealthService {
   private healthMonitor?: HealthMonitor;
   private failureCounters: Map<string, number> = new Map();
+
+  constructor(@inject(TYPES.HealthMonitor) @optional() healthMonitor?: HealthMonitor) {
+    this.healthMonitor = healthMonitor;
+  }
 
   setHealthMonitor(monitor: HealthMonitor): void {
     this.healthMonitor = monitor;
@@ -93,4 +101,4 @@ class HealthService {
   }
 }
 
-export const healthService = new HealthService();
+export { HealthService };
