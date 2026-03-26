@@ -1,24 +1,17 @@
+import 'reflect-metadata';
+import { container, TYPES } from '../config/inversify.config';
 import { HealthMonitor } from '../services/healthMonitor';
-import { createNotificationManager } from '../services/notificationProvider';
+import { HealthService } from '../services/healthService';
 import { createLogger } from '../lib/logger';
 
 const logger = createLogger('healthMonitoringInstance');
 
-let healthMonitorInstance: HealthMonitor | null = null;
-
 export function getHealthMonitor(): HealthMonitor {
-  if (!healthMonitorInstance) {
-    const notificationManager = createNotificationManager();
-    healthMonitorInstance = new HealthMonitor(notificationManager);
-    logger.info('Health monitor instance created');
-  }
-  return healthMonitorInstance;
+  return container.get<HealthMonitor>(TYPES.HealthMonitor);
 }
 
 export function initializeHealthMonitoring(): void {
   const monitor = getHealthMonitor();
-  // Import here to avoid circular dependencies
-  const { healthService } = require('../services/healthService');
-  healthService.setHealthMonitor(monitor);
-  logger.info('Health monitoring initialized');
+  const healthService = container.get<HealthService>(TYPES.HealthService);
+  logger.info('Health monitoring initialized with DI container');
 }
