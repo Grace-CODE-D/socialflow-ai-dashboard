@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { UserStore } from '../models/User';
 import { auditLogger } from '../services/AuditLogger';
 import { PasswordHistoryService } from '../services/PasswordHistoryService';
+import { AuthBlacklistService } from '../services/AuthBlacklistService';
 import { prisma } from '../lib/prisma';
 
 const SALT_ROUNDS = 12;
@@ -95,7 +96,7 @@ export function refresh(req: Request, res: Response): void {
   res.json({ accessToken: signAccess(user.id), refreshToken: newRefresh });
 }
 
-export function logout(req: Request, res: Response): void {
+export async function logout(req: Request, res: Response): Promise<void> {
   const { refreshToken } = req.body as { refreshToken: string };
 
   let payload: jwt.JwtPayload;
@@ -112,6 +113,22 @@ export function logout(req: Request, res: Response): void {
       refreshTokens: user.refreshTokens.filter((t) => t !== refreshToken),
     });
     auditLogger.log({ actorId: user.id, action: 'auth:logout', ip: req.ip, userAgent: req.headers['user-agent'] });
+  }
+
+  // Blacklist the current access token if present in the Authorization header
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const accessToken = authHeader.slice(7);
+    try {
+      const accessPayload = jwt.verify(accessToken, jwtSecret()) as jwt.JwtPayload;
+      const tokenKey = AuthBlacklistService.keyFromPayload(accessPayload);
+      const ttl = accessPayload.exp
+        ? accessPayload.exp - Math.floor(Date.now() / 1000)
+        : AuthBlacklistService.accessTokenTTL();
+      await AuthBlacklistService.blacklistToken(tokenKey, ttl);
+    } catch {
+      // Access token already expired or invalid — nothing to blacklist
+    }
   }
 
   res.status(204).send();
@@ -147,6 +164,22 @@ export async function changePassword(req: Request, res: Response): Promise<void>
   // Hash and record the new password
   const newPasswordHash = await PasswordHistoryService.hashPassword(newPassword);
   await PasswordHistoryService.recordPasswordChange(userId, newPasswordHash);
+
+  // Blacklist the current access token — forces re-login after password change
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const accessToken = authHeader.slice(7);
+    try {
+      const accessPayload = jwt.verify(accessToken, jwtSecret()) as jwt.JwtPayload;
+      const tokenKey = AuthBlacklistService.keyFromPayload(accessPayload);
+      const ttl = accessPayload.exp
+        ? accessPayload.exp - Math.floor(Date.now() / 1000)
+        : AuthBlacklistService.accessTokenTTL();
+      await AuthBlacklistService.blacklistToken(tokenKey, ttl);
+    } catch {
+      // Token already expired — nothing to blacklist
+    }
+  }
 
   auditLogger.log({ actorId: userId, action: 'auth:change-password', ip: req.ip, userAgent: req.headers['user-agent'] });
   res.json({ message: 'Password changed successfully' });
