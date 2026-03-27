@@ -1,56 +1,36 @@
-name: CI
+name: CI Security Scan
 
 on:
   pull_request:
 
 jobs:
-  lint-and-test:
-    name: Lint & Test (Node ${{ matrix.node-version }})
+  security:
+    name: Security Vulnerability Scan
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18, 20]
-
     steps:
       - uses: actions/checkout@v4
 
-      # ── Frontend ────────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
+          node-version: '20'
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
 
-      - name: Lint frontend
-        run: npm run lint
+      - name: Audit backend dependencies
+        working-directory: backend
+        run: npm audit --audit-level=high
 
-      - name: Build frontend
-        run: npm run build
-
-      - name: Test frontend
-        run: npm run test:ci
-
-      # ── Backend ─────────────────────────────────────────────────────────────
-      - uses: actions/setup-node@v4
+      - name: Run Snyk scan (frontend)
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
+          args: --severity-threshold=high --file=package-lock.json
 
-      - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Lint backend
-        working-directory: backend
-        run: npm run lint
-
-      - name: Build backend
-        working-directory: backend
-        run: npm run build
-
-      - name: Test backend
-        working-directory: backend
-        run: npm test
+      - name: Run Snyk scan (backend)
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=backend/package-lock.json

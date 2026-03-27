@@ -7,7 +7,9 @@ import { requestIdMiddleware } from './middleware/requestId';
 import { compressionMiddleware } from './middleware/compression';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { initRateLimiters } from './middleware/rateLimit';
+import { sliMiddleware } from './middleware/sliMiddleware';
 import v1Router from './routes/v1';
+import metricsRouter from './routes/metrics';
 
 // Initialise rate limiters (resolves Redis store in production)
 export const rateLimitersReady = initRateLimiters();
@@ -22,6 +24,7 @@ app.use(compressionMiddleware);
 // CORS — allow EventSource connections
 app.use(cors());
 app.use(requestIdMiddleware);
+app.use(sliMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined'));
@@ -43,6 +46,9 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Prometheus metrics scrape endpoint
+app.use('/metrics', metricsRouter);
 
 // ── Error handling ────────────────────────────────────────────────────────────
 
