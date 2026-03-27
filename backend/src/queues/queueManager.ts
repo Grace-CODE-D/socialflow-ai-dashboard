@@ -1,5 +1,6 @@
 import { Queue, Worker, QueueEvents, JobsOptions, ConnectionOptions } from 'bullmq';
 import Redis from 'ioredis';
+import { config } from '../config/config';
 
 /**
  * Parse Redis URL into connection options
@@ -45,12 +46,12 @@ function createRedisConnection(): ConnectionOptions {
     return parseRedisUrl(redisUrl);
   }
 
-  // Fallback to individual environment variables
-  console.log('Using Redis connection from individual env vars (REDIS_HOST, REDIS_PORT)');
+  // Fallback to individual config values
+  console.log('Using Redis connection from config (REDIS_HOST, REDIS_PORT)');
   return {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD || undefined,
+    host: config.REDIS_HOST,
+    port: config.REDIS_PORT,
+    password: config.REDIS_PASSWORD || undefined,
     maxRetriesPerRequest: null,
     retryStrategy: (times: number) => {
       if (times > 10) {

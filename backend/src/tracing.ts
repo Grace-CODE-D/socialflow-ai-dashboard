@@ -23,47 +23,42 @@ import { JaegerExporter } from '@opentelemetry/exporter-jaeger';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { SpanExporter } from '@opentelemetry/sdk-trace-base';
 import { createLogger } from './lib/logger';
+import { config } from './config/config';
 
 const logger = createLogger('tracing');
 
 // ─── Exporter factory ────────────────────────────────────────────────────────
 
 function buildExporter(): SpanExporter {
-  const exporterType = (process.env.OTEL_EXPORTER ?? 'jaeger').toLowerCase();
-
-  switch (exporterType) {
+  switch (config.OTEL_EXPORTER) {
     case 'honeycomb': {
-      const apiKey = process.env.HONEYCOMB_API_KEY;
-      const dataset = process.env.HONEYCOMB_DATASET ?? 'socialflow-ai-dashboard';
-      if (!apiKey) {
+      if (!config.HONEYCOMB_API_KEY) {
         logger.warn('HONEYCOMB_API_KEY is not set — traces will not be exported');
       }
       return new OTLPTraceExporter({
         url: 'https://api.honeycomb.io/v1/traces',
         headers: {
-          'x-honeycomb-team': apiKey ?? '',
-          'x-honeycomb-dataset': dataset,
+          'x-honeycomb-team': config.HONEYCOMB_API_KEY ?? '',
+          'x-honeycomb-dataset': config.HONEYCOMB_DATASET,
         },
       });
     }
 
     case 'otlp': {
-      const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://localhost:4318/v1/traces';
-      return new OTLPTraceExporter({ url: endpoint });
+      return new OTLPTraceExporter({ url: config.OTEL_EXPORTER_OTLP_ENDPOINT });
     }
 
     case 'jaeger':
     default: {
-      const endpoint = process.env.JAEGER_ENDPOINT ?? 'http://localhost:14268/api/traces';
-      return new JaegerExporter({ endpoint });
+      return new JaegerExporter({ endpoint: config.JAEGER_ENDPOINT });
     }
   }
 }
 
 // ─── SDK initialisation ──────────────────────────────────────────────────────
 
-const isDebug = process.env.OTEL_DEBUG === 'true';
-const serviceName = process.env.OTEL_SERVICE_NAME ?? 'socialflow-ai-dashboard';
+const isDebug = config.OTEL_DEBUG;
+const serviceName = config.OTEL_SERVICE_NAME;
 
 const exporter = buildExporter();
 
@@ -79,7 +74,7 @@ export const sdk = new NodeSDK({
   resource: new Resource({
     [ATTR_SERVICE_NAME]: serviceName,
     [ATTR_SERVICE_VERSION]: process.env.npm_package_version ?? '0.0.0',
-    environment: process.env.NODE_ENV ?? 'development',
+    environment: config.NODE_ENV,
   }),
   spanProcessors: [spanProcessor],
   instrumentations: [
@@ -93,7 +88,7 @@ export const sdk = new NodeSDK({
 sdk.start();
 logger.info('OpenTelemetry tracing initialised', {
   service: serviceName,
-  exporter: process.env.OTEL_EXPORTER ?? 'jaeger',
+  exporter: config.OTEL_EXPORTER,
 });
 
 // Flush spans on graceful shutdown
