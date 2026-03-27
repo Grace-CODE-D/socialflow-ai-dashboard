@@ -1,9 +1,11 @@
 import 'reflect-metadata';
+// Validate all environment variables at startup — throws if any required var is missing/invalid.
+import { config } from './config/config';
 import app from './app';
 import { SocketService } from './services/SocketService';
 import { initializeWorkers } from './jobs/workers';
+import { startWorkers } from './workers/index';
 import { queueManager } from './queues/queueManager';
-import { getBackendPort } from './config/runtime';
 import { startDataPruningJob, stopDataPruningJob } from './jobs/dataPruningJob';
 import { startYouTubeSyncJob, stopYouTubeSyncJob } from './jobs/youtubeSyncJob';
 import { startTikTokVideoWorker } from './jobs/tiktokVideoJob';
@@ -16,7 +18,7 @@ import { Worker } from 'bullmq';
 import { Server } from 'http';
 
 const logger = createLogger('server');
-const PORT = getBackendPort();
+const PORT = config.BACKEND_PORT;
 
 let serverInstance: Server | null = null;
 let webhookWorker: Worker | null = null;
@@ -193,6 +195,7 @@ const bootstrap = async (): Promise<void> => {
     // Initialize job queue workers
     logger.info('Initializing job queue workers...');
     initializeWorkers();
+    startWorkers();
 
     // Initialize health monitoring
     try {
