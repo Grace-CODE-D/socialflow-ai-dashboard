@@ -7,6 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "test": "jest --runInBand",
+    "test:coverage": "jest --runInBand --coverage",
+    "test:ci": "jest --runInBand --coverage --ci --forceExit",
     "cli": "node dist/cli/index.js",
     "cli:dev": "ts-node-dev --respawn --transpile-only src/cli/index.ts",
     "data-pruning:run": "node dist/scripts/data-pruning.js",
