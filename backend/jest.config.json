@@ -12,11 +12,14 @@
     "!src/server.ts",
     "!src/tracing.ts"
   ],
-  "coverageReporters": ["text", "lcov", "html"],
+  "coverageReporters": ["text", "lcov", "html", "json-summary"],
   "coverageDirectory": "coverage",
   "coverageThreshold": {
     "global": {
-      "lines": 50
+      "lines": 80,
+      "statements": 80,
+      "functions": 80,
+      "branches": 70
     }
   }
 }
