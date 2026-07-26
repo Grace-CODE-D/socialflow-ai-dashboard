@@ -8,6 +8,9 @@
  *
  *   const result = await traceDbQuery('users.findById', async () => db.find(...));
  *   const reply  = await traceAiCall('gemini.generate', model, async () => ai.generate(...));
+ *
+ * Wired in at: PredictiveService (traceHttpCall), TranslationService
+ * (traceAiCall), transactionDB (traceDbQuery), IPFSUploader (withSpan).
  */
 
 import { trace, SpanStatusCode, SpanKind, context, Span } from '@opentelemetry/api';
