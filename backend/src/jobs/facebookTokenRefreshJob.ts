@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { getRedisConnection } from '../config/runtime';
 import { createLogger } from '../lib/logger';
 import { facebookService } from '../services/FacebookService';
+import { encryptToken, decryptToken } from '../utils/tokenEncryption';
 
 const logger = createLogger('facebook-token-refresh-job');
 
@@ -57,7 +58,8 @@ const REFRESH_THRESHOLD_DAYS = 10;
 
 /**
  * Redis key pattern for stored Facebook long-lived tokens.
- * Hash fields: accessToken, expiresAt (unix ms as string)
+ * Hash fields: accessToken (AES-256-GCM encrypted, see utils/tokenEncryption),
+ * expiresAt (unix ms as string)
  *
  * Key: facebook:token:<userId>
  */
@@ -112,10 +114,21 @@ export const startFacebookTokenRefreshJob = async (): Promise<void> => {
           const expiresAt = Number(data.expiresAt);
           if (expiresAt > expiryBefore) continue; // not expiring soon
 
+          let currentAccessToken: string;
           try {
-            const result = await facebookService.getLongLivedUserToken(data.accessToken);
+            currentAccessToken = decryptToken(data.accessToken);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error('Failed to decrypt stored Facebook token', { key, error: message });
+            errors.push({ key, error: 'decrypt_failed' });
+            failed++;
+            continue;
+          }
+
+          try {
+            const result = await facebookService.getLongLivedUserToken(currentAccessToken);
             await redis.hset(key, {
-              accessToken: result.accessToken,
+              accessToken: encryptToken(result.accessToken),
               expiresAt: String(result.expiresAt),
             });
             // Extend Redis TTL to match the new token lifetime (60 days + buffer)
