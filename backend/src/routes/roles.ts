@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticate as authMiddleware, AuthRequest } from '../middleware/authenticate';
 import { checkPermission } from '../middleware/checkPermission';
 import { validate } from '../middleware/validate';
+import { audit } from '../middleware/audit';
 import { ROLES, PERMISSIONS, RoleStore, RoleName } from '../models/Role';
 import { UserStore } from '../models/User';
 
@@ -110,6 +111,12 @@ router.post(
   authMiddleware,
   checkPermission('roles:manage'),
   validate(assignSchema),
+  audit(
+    'role:assign',
+    'user',
+    (req) => (req.body as { userId?: string })?.userId,
+    (req) => ({ role: (req.body as { role?: string })?.role }),
+  ),
   (req: Request, res: Response) => {
     const { userId, role } = req.body as { userId: string; role: RoleName };
     if (!UserStore.findById(userId)) {
@@ -144,6 +151,7 @@ router.delete(
   '/assign/:userId',
   authMiddleware,
   checkPermission('roles:manage'),
+  audit('role:revoke', 'user', (req) => req.params.userId),
   (req: Request, res: Response) => {
     const { userId } = req.params;
     if (!RoleStore.getRoleName(userId)) {
