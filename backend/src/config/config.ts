@@ -11,7 +11,16 @@ const envSchema = z.object({
   BACKEND_PORT: z.coerce.number().int().positive().default(3001),
 
   // ── Database ──────────────────────────────────────────────────────────────
-  DATABASE_URL: z.string().url('DATABASE_URL must be a valid URL'),
+  // DATABASE_URL can be provided directly (local/test) or assembled at
+  // runtime from discrete DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD values
+  // (production — see infra), so the DB password is never stored as part of
+  // one combined Terraform-tracked SSM parameter.
+  DATABASE_URL: z.string().url('DATABASE_URL must be a valid URL').optional(),
+  DB_HOST: z.string().optional(),
+  DB_PORT: z.coerce.number().int().positive().default(5432),
+  DB_NAME: z.string().optional(),
+  DB_USER: z.string().optional(),
+  DB_PASSWORD: z.string().optional(),
   DATABASE_REPLICA_URL: z.string().url('DATABASE_REPLICA_URL must be a valid URL').optional(),
   // Connection pool — defaults tuned per environment in src/lib/prisma.ts
   // Override here to hard-pin values regardless of NODE_ENV.
@@ -179,7 +188,31 @@ const envSchema = z.object({
         'ELASTICSEARCH_TLS_REJECT_UNAUTHORIZED cannot be "false" in production — disabling TLS verification exposes Elasticsearch traffic to MITM attacks',
     });
   }
+
+  if (!data.DATABASE_URL && !(data.DB_HOST && data.DB_NAME && data.DB_USER && data.DB_PASSWORD)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message:
+        'Either DATABASE_URL or the full set of DB_HOST/DB_NAME/DB_USER/DB_PASSWORD must be set',
+    });
+  }
 });
+
+/**
+ * Builds the Postgres connection string at runtime. Prefers an explicit
+ * DATABASE_URL (local/test); otherwise assembles it from discrete
+ * DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD values, which is how
+ * production is configured — see terraform/modules/ecs, which injects these
+ * as separate SSM parameters instead of one pre-assembled connection string
+ * so the password is never stored as part of a single combined attribute.
+ */
+function buildDatabaseUrl(data: Env): string {
+  if (data.DATABASE_URL) return data.DATABASE_URL;
+  const user = encodeURIComponent(data.DB_USER!);
+  const password = encodeURIComponent(data.DB_PASSWORD!);
+  return `postgresql://${user}:${password}@${data.DB_HOST}:${data.DB_PORT}/${data.DB_NAME}`;
+}
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -221,7 +254,13 @@ function validateEnv(env: NodeJS.ProcessEnv = process.env): Env {
     console.warn('[Startup Warning] No TTS provider configured — TTS features will be unavailable');
   }
 
-  return result.data;
+  // Assemble DATABASE_URL from discrete parts when it wasn't provided
+  // directly, and keep process.env.DATABASE_URL in sync for code paths
+  // (e.g. Prisma) that read it straight from the environment.
+  const databaseUrl = buildDatabaseUrl(result.data);
+  process.env.DATABASE_URL = databaseUrl;
+
+  return { ...result.data, DATABASE_URL: databaseUrl };
 }
 
 // Lazily validated so test files can import `validateEnv` without a valid

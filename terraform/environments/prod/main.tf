@@ -75,7 +75,14 @@ module "ecs" {
   desired_count       = 2
   container_port      = 3001
   app_sg_id           = aws_security_group.app.id
-  database_url        = "postgresql://${var.db_username}:${var.db_password}@${module.rds.endpoint}/${var.db_name}"
+  # DB connection is passed as discrete fields (not one pre-assembled
+  # database_url) so the password is never stored as part of a single
+  # combined Terraform-tracked attribute — see modules/ecs for details.
+  db_host             = module.rds.endpoint
+  db_port             = 5432
+  db_name             = var.db_name
+  db_username         = var.db_username
+  db_password         = var.db_password
   redis_url           = "rediss://${module.elasticache.primary_endpoint}:6379"
   jwt_secret          = var.jwt_secret
   s3_bucket           = module.s3.bucket_name
