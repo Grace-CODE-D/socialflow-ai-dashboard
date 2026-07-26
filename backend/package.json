@@ -20,7 +20,8 @@
     "data-pruning:dev": "ts-node-dev --respawn --transpile-only src/scripts/data-pruning.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "format": "prettier --write 'src/**/*.ts'"
+    "format": "prettier --write 'src/**/*.ts'",
+    "check:env-example": "node scripts/check-env-example.js"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",
