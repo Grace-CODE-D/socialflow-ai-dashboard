@@ -31,6 +31,34 @@ module "s3" {
   bucket_name = "socialflow-dev-assets-${var.account_id}"
 }
 
+# App security group shared by ECS, RDS, and ElastiCache. Created here at the
+# root rather than inside the ecs module so that rds/elasticache (which need
+# to allow ingress from it) don't have to depend on the ecs module, while ecs
+# (whose database_url depends on module.rds.endpoint) doesn't have to depend
+# on rds's output either. Keeping it at the root breaks what was previously a
+# genuine module-level cycle: ecs -> rds (database_url) and rds -> ecs
+# (app_sg_id) at the same time.
+resource "aws_security_group" "app" {
+  name   = "socialflow-dev-app-sg"
+  vpc_id = module.networking.vpc_id
+
+  ingress {
+    from_port       = 3001
+    to_port         = 3001
+    protocol        = "tcp"
+    security_groups = [module.ecs.alb_sg_id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "socialflow-dev-app-sg" }
+}
+
 module "ecs" {
   source              = "../../modules/ecs"
   env                 = "dev"
@@ -42,6 +70,7 @@ module "ecs" {
   memory              = 512
   desired_count       = 1
   container_port      = 3001
+  app_sg_id           = aws_security_group.app.id
   database_url        = "postgresql://${var.db_username}:${var.db_password}@${module.rds.endpoint}/${var.db_name}"
   redis_url           = "rediss://${module.elasticache.primary_endpoint}:6379"
   jwt_secret          = var.jwt_secret
@@ -59,7 +88,7 @@ module "rds" {
   db_password        = var.db_password
   instance_class     = "db.t3.micro"
   allocated_storage  = 20
-  app_sg_id          = module.ecs.app_sg_id
+  app_sg_id          = aws_security_group.app.id
 }
 
 module "elasticache" {
@@ -68,7 +97,7 @@ module "elasticache" {
   vpc_id     = module.networking.vpc_id
   subnet_ids = module.networking.private_subnet_ids
   node_type  = "cache.t3.micro"
-  app_sg_id  = module.ecs.app_sg_id
+  app_sg_id  = aws_security_group.app.id
 }
 
 module "iam" {

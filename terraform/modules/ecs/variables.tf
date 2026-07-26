@@ -4,6 +4,11 @@ variable "public_subnet_ids"  { type = list(string) }
 variable "private_subnet_ids" { type = list(string) }
 variable "image_uri"        { type = string }
 
+# Security group attached to the ECS service's ENIs, created outside this
+# module (see the app_sg_id note in outputs.tf) so it can be shared with the
+# rds/elasticache modules without creating a circular module dependency.
+variable "app_sg_id"        { type = string }
+
 # CPU/memory right-sizing
 # Values are set based on observed p95 usage plus 20% headroom from Container Insights metrics.
 # Fargate valid CPU/memory combinations: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html

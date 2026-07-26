@@ -139,27 +139,6 @@ resource "aws_security_group" "alb" {
   tags = { Name = "socialflow-${var.env}-alb-sg" }
 }
 
-resource "aws_security_group" "app" {
-  name   = "socialflow-${var.env}-app-sg"
-  vpc_id = var.vpc_id
-
-  ingress {
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "socialflow-${var.env}-app-sg" }
-}
-
 resource "aws_lb" "main" {
   name               = "socialflow-${var.env}-alb"
   internal           = false
@@ -204,7 +183,7 @@ resource "aws_ecs_service" "app" {
 
   network_configuration {
     subnets         = var.private_subnet_ids
-    security_groups = [aws_security_group.app.id]
+    security_groups = [var.app_sg_id]
   }
 
   load_balancer {
