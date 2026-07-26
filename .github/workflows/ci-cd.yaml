@@ -25,7 +25,7 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm run test:ci || echo "Tests passed or ignored for demo"
+        run: npm run test:ci
 
   deploy-staging:
     name: Continuous Deployment (Staging)
