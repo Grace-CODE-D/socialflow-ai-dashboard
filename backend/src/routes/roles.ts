@@ -57,8 +57,8 @@ router.get(
   '/assignments',
   authMiddleware,
   checkPermission('users:read'),
-  (_req: Request, res: Response) => {
-    return res.json(RoleStore.listAll());
+  async (_req: Request, res: Response) => {
+    return res.json(await RoleStore.listAll());
   },
 );
 
@@ -72,8 +72,8 @@ router.get(
  *       200:
  *         description: Current user role
  */
-router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
-  const role = RoleStore.getRole(req.user!.id);
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const role = await RoleStore.getRole(req.user!.id);
   if (!role) return res.json({ role: null, permissions: [] });
   return res.json({ role: role.name, permissions: role.permissions });
 });
@@ -110,12 +110,12 @@ router.post(
   authMiddleware,
   checkPermission('roles:manage'),
   validate(assignSchema),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { userId, role } = req.body as { userId: string; role: RoleName };
-    if (!UserStore.findById(userId)) {
+    if (!(await UserStore.findById(userId))) {
       return res.status(404).json({ message: 'User not found' });
     }
-    RoleStore.assign(userId, role);
+    await RoleStore.assign(userId, role);
     return res.json({ userId, role });
   },
 );
@@ -144,12 +144,12 @@ router.delete(
   '/assign/:userId',
   authMiddleware,
   checkPermission('roles:manage'),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { userId } = req.params;
-    if (!RoleStore.getRoleName(userId)) {
+    if (!(await RoleStore.getRoleName(userId))) {
       return res.status(404).json({ message: 'No role assignment found for this user' });
     }
-    RoleStore.assign(userId, 'viewer');
+    await RoleStore.assign(userId, 'viewer');
     return res.status(204).send();
   },
 );

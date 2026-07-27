@@ -187,15 +187,17 @@ describe('createPost', () => {
     );
   });
 
-  it('fails open and still creates the post when ModerationService throws', async () => {
-    mockModerate.mockRejectedValue(new Error('OpenAI API unavailable'));
+  it('fails closed — rejects and does not create the post when ModerationService throws (#1299)', async () => {
+    const moderationError = new Error('Moderation unavailable: OPENAI_API_KEY not set');
+    mockModerate.mockRejectedValue(moderationError);
     const req = makeReq({ body: { content: 'Hello', platform: 'twitter', organizationId: ORG_A } });
     const res = makeRes();
 
     await createPost(req, res, next);
 
-    expect(mockCreate).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(201);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(moderationError);
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it('fires indexPost with the new post data after creation', async () => {
@@ -337,6 +339,18 @@ describe('updatePost', () => {
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ mediaUrls }) }),
     );
+  });
+
+  it('fails closed — rejects and does not update the post when ModerationService throws (#1299)', async () => {
+    const moderationError = new Error('Moderation API returned 500');
+    mockModerate.mockRejectedValue(moderationError);
+    const req = makeReq({ params: { id: POST_ID }, body: { content: 'Updated' }, activeOrgId: ORG_A });
+    const res = makeRes();
+
+    await updatePost(req, res, next);
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(moderationError);
   });
 
   it('skips moderation when content is not part of the update payload', async () => {
