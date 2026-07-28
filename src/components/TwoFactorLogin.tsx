@@ -13,27 +13,40 @@ const TwoFactorLogin: React.FC<TwoFactorLoginProps> = ({ onSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [lockedOut, setLockedOut] = useState(false);
 
   // Countdown timer for lockout
   useEffect(() => {
-    if (!twoFactorService.isLockedOut()) return;
-    const interval = setInterval(() => {
-      const ms = twoFactorService.getLockoutRemainingMs();
+    const checkLockout = async () => {
+      const locked = await twoFactorService.isLockedOut();
+      setLockedOut(locked);
+      if (!locked) return;
+      
+      const interval = setInterval(async () => {
+        const ms = await twoFactorService.getLockoutRemainingMs();
+        setRemainingMs(ms);
+        if (ms <= 0) {
+          clearInterval(interval);
+          setLockedOut(false);
+        }
+      }, 1000);
+      
+      const ms = await twoFactorService.getLockoutRemainingMs();
       setRemainingMs(ms);
-      if (ms <= 0) clearInterval(interval);
-    }, 1000);
-    setRemainingMs(twoFactorService.getLockoutRemainingMs());
-    return () => clearInterval(interval);
+      
+      return () => clearInterval(interval);
+    };
+    
+    checkLockout();
   }, [error]);
-
-  const lockedOut = twoFactorService.isLockedOut();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (twoFactorService.isLockedOut()) {
-      setRemainingMs(twoFactorService.getLockoutRemainingMs());
+    if (await twoFactorService.isLockedOut()) {
+      setRemainingMs(await twoFactorService.getLockoutRemainingMs());
+      setLockedOut(true);
       return;
     }
 
@@ -59,9 +72,11 @@ const TwoFactorLogin: React.FC<TwoFactorLoginProps> = ({ onSuccess }) => {
         onSuccess();
       } else {
         twoFactorService.recordFailedAttempt();
-        if (twoFactorService.isLockedOut()) {
-          setRemainingMs(twoFactorService.getLockoutRemainingMs());
-          setError(`Too many failed attempts. Try again in ${Math.ceil(twoFactorService.getLockoutRemainingMs() / 60000)} minute(s).`);
+        if (await twoFactorService.isLockedOut()) {
+          const ms = await twoFactorService.getLockoutRemainingMs();
+          setRemainingMs(ms);
+          setLockedOut(true);
+          setError(`Too many failed attempts. Try again in ${Math.ceil(ms / 60000)} minute(s).`);
         } else {
           setError('Invalid code. Please try again.');
         }

@@ -116,6 +116,54 @@ describe('SmartContractInvoker', () => {
       expect(result.errorType).toBe('TRANSACTION_FAILED');
     });
 
+    it('proceeds to poll transaction status for PENDING responses', async () => {
+      const simulate = jest.fn().mockResolvedValue({ success: true });
+      const signTx = jest.fn().mockResolvedValue('signed-xdr');
+      const pollResult = { success: true, transactionHash: 'pending-hash' };
+      const poll = jest.fn().mockResolvedValue(pollResult);
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'PENDING', hash: 'pending-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(poll).toHaveBeenCalledWith('pending-hash');
+      expect(result).toEqual(pollResult);
+    });
+
+    it('returns a distinct retryable error for DUPLICATE without polling', async () => {
+      const simulate = jest.fn().mockResolvedValue({ success: true });
+      const signTx = jest.fn().mockResolvedValue('signed-xdr');
+      const poll = jest.fn();
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'DUPLICATE', hash: 'dup-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe('DUPLICATE_TRANSACTION');
+      expect(poll).not.toHaveBeenCalled();
+    });
+
+    it('returns a distinct retryable error for TRY_AGAIN_LATER without polling', async () => {
+      const simulate = jest.fn().mockResolvedValue({ success: true });
+      const signTx = jest.fn().mockResolvedValue('signed-xdr');
+      const poll = jest.fn();
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER', hash: 'retry-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe('TRY_AGAIN_LATER');
+      expect(poll).not.toHaveBeenCalled();
+    });
+
     it('returns OUT_OF_GAS error type for out-of-gas exceptions', async () => {
       const simulate = jest.fn().mockResolvedValue({ success: true });
       const signTx = jest.fn().mockResolvedValue('signed-xdr');

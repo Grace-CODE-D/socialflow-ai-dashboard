@@ -8,7 +8,7 @@ const logger = createLogger('middleware:ipWhitelist');
 
 /**
  * Middleware to restrict access to specific IP addresses and CIDR ranges.
- * Supports IPv4 and IPv6, and handles proxy headers safely if the app is 
+ * Supports IPv4 and IPv6, and handles proxy headers safely if the app is
  * configured to trust proxies.
  */
 /**
@@ -29,13 +29,18 @@ export const ipWhitelistMiddleware = (req: Request, res: Response, next: NextFun
   const clientIp = requestIp.getClientIp(req);
   const whitelist = getAdminIpWhitelist();
 
-  // If no whitelist is configured, allow all by default (per conventional security or block?)
-  // Given the requirement "Restrict access... to specific... IP addresses", 
-  // if the list is empty, we might want to log a warning but allow access if not in production.
-  // For strictness, if the list is expected but empty, we could block.
-  // However, usually, an empty list means the feature is disabled.
+  // Fail closed: an empty whitelist must not grant unrestricted access to the
+  // sensitive admin/ops routes this middleware protects. Configure
+  // ADMIN_IP_WHITELIST to allow trusted IPs through.
   if (whitelist.length === 0) {
-    return next();
+    logger.warn(
+      'ADMIN_IP_WHITELIST is not configured — blocking all requests to IP-restricted routes. ' +
+        'Set ADMIN_IP_WHITELIST to a comma-separated list of allowed IPs/CIDR ranges to grant access.',
+      { path: req.path, method: req.method },
+    );
+    return res.status(403).json({
+      error: 'Access forbidden: IP whitelisting is not configured for this endpoint.',
+    });
   }
 
   if (!clientIp) {
@@ -57,7 +62,7 @@ export const ipWhitelistMiddleware = (req: Request, res: Response, next: NextFun
           const [range, bits] = entry.split('/');
           const network = ipaddr.parse(range);
           const bitCount = parseInt(bits, 10);
-          
+
           // Ensure both are same version (v4 or v6)
           if (addr.kind() === network.kind()) {
             return (addr as any).match(network, bitCount);
@@ -69,7 +74,10 @@ export const ipWhitelistMiddleware = (req: Request, res: Response, next: NextFun
           return addr.toString() === allowedAddr.toString();
         }
       } catch (err) {
-        logger.error('Invalid entry in IP whitelist', { entry, error: err instanceof Error ? err.message : String(err) });
+        logger.error('Invalid entry in IP whitelist', {
+          entry,
+          error: err instanceof Error ? err.message : String(err),
+        });
         return false;
       }
     });
@@ -90,7 +98,7 @@ export const ipWhitelistMiddleware = (req: Request, res: Response, next: NextFun
     });
   }
 
-  return res.status(403).json({ 
-    error: 'Access forbidden: Your IP address is not authorized to access this endpoint.' 
+  return res.status(403).json({
+    error: 'Access forbidden: Your IP address is not authorized to access this endpoint.',
   });
 };

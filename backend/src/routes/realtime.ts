@@ -3,10 +3,11 @@ import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../middleware/authenticate';
 import { eventBus, JobProgressEvent } from '../lib/eventBus';
 import { createLogger } from '../lib/logger';
+import { config } from '../config/config';
+import { sseTicketService } from '../services/SSETicketService';
 
 const router = Router();
 const logger = createLogger('SSE');
-const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 
 /**
  * @openapi
@@ -16,13 +17,20 @@ const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
  *     summary: Server-Sent Events stream for real-time job progress
  *     description: |
  *       Streams `job_progress` events for the authenticated user.
- *       Pass the JWT as `?token=<jwt>` because browser `EventSource` cannot set headers.
+ *       Authentication: Pass an SSE ticket as `?ticket=<ticket>` (preferred)
+ *       or pass the JWT as `?token=<jwt>` (legacy, discouraged).
+ *       Browser `EventSource` cannot set headers, so query params are required.
  *     parameters:
+ *       - in: query
+ *         name: ticket
+ *         schema:
+ *           type: string
+ *         description: Short-lived SSE ticket (preferred, from POST /auth/sse-ticket)
  *       - in: query
  *         name: token
  *         schema:
  *           type: string
- *         description: JWT access token (alternative to Authorization header)
+ *         description: JWT access token (legacy fallback, not recommended)
  *     responses:
  *       200:
  *         description: SSE stream (text/event-stream)
@@ -31,26 +39,37 @@ const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
  *             schema:
  *               type: string
  *       401:
- *         description: Missing or invalid token
+ *         description: Missing or invalid credentials
  */
 router.get('/stream', (req: AuthRequest, res: Response) => {
-  // Accept token from header or query param
   let userId: string | undefined;
-  const authHeader = req.headers.authorization;
-  const queryToken = req.query.token as string | undefined;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
 
-  if (!token) {
-    res.status(401).json({ message: 'Missing token' });
-    return;
-  }
+  // Preferred: SSE ticket
+  const queryTicket = req.query.ticket as string | undefined;
+  if (queryTicket) {
+    userId = sseTicketService.validateAndConsume(queryTicket) ?? undefined;
+    if (!userId) {
+      res.status(401).json({ message: 'Invalid or expired SSE ticket' });
+      return;
+    }
+  } else {
+    // Fallback: Accept token from header or query param (legacy)
+    const authHeader = req.headers.authorization;
+    const queryToken = req.query.token as string | undefined;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET()) as jwt.JwtPayload;
-    userId = payload.sub as string;
-  } catch {
-    res.status(401).json({ message: 'Invalid or expired token' });
-    return;
+    if (!token) {
+      res.status(401).json({ message: 'Missing ticket or token' });
+      return;
+    }
+
+    try {
+      const payload = jwt.verify(token, config.JWT_SECRET) as jwt.JwtPayload;
+      userId = payload.sub as string;
+    } catch {
+      res.status(401).json({ message: 'Invalid or expired token' });
+      return;
+    }
   }
 
   // SSE headers

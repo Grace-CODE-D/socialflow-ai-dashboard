@@ -4,7 +4,10 @@ import { ReachScoreWidget } from './ReachScoreWidget';
 import { PostAnalysisInput, ReachPrediction } from '../types/predictive';
 import { usePosts } from '../contexts/PostsContext';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { parseHashtags } from '../lib/hashtags';
+
+const PLACEHOLDER_FOLLOWER_COUNT = 25000;
 
 type ComposerPlatform = PostAnalysisInput['platform'];
 type ComposerMedia = NonNullable<PostAnalysisInput['mediaType']>;
@@ -37,6 +40,9 @@ const MaterialIcon = ({ name, className }: { name: string; className?: string })
 export const PostComposer: React.FC<PostComposerProps> = ({ open, onClose }) => {
   const { addPost } = usePosts();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const hasRealFollowerCount = typeof user?.followerCount === 'number';
+  const followerCount = user?.followerCount ?? PLACEHOLDER_FOLLOWER_COUNT;
 
   const [platform, setPlatform] = useState<ComposerPlatform>('instagram');
   const [mediaType, setMediaType] = useState<ComposerMedia>('image');
@@ -100,9 +106,9 @@ export const PostComposer: React.FC<PostComposerProps> = ({ open, onClose }) => 
       hashtags,
       mediaType,
       scheduledTime: date && time ? new Date(`${date}T${time}`) : new Date(Date.now() + 3600_000),
-      followerCount: 120000,
+      followerCount,
     }),
-    [caption, platform, hashtags, mediaType, date, time]
+    [caption, platform, hashtags, mediaType, date, time, followerCount]
   );
 
   const reset = () => {
@@ -264,6 +270,16 @@ export const PostComposer: React.FC<PostComposerProps> = ({ open, onClose }) => 
 
               {/* Live reach analysis */}
               <div className="lg:col-span-2">
+                {!hasRealFollowerCount && (
+                  <div
+                    role="status"
+                    className="mb-3 flex items-center gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] font-semibold text-yellow-400"
+                  >
+                    <MaterialIcon name="info" className="text-sm" />
+                    No connected follower count — using a placeholder audience of{' '}
+                    {(PLACEHOLDER_FOLLOWER_COUNT / 1000).toFixed(0)}k for this estimate.
+                  </div>
+                )}
                 <ReachScoreWidget postData={postData} onUpdate={setPrediction} />
               </div>
             </div>

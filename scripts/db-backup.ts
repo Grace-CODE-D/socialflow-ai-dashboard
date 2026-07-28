@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { readFileSync } from 'fs';
+import { readFileSync, openSync, closeSync } from 'fs';
 import { join } from 'path';
 
 const DB_URL = process.env.DATABASE_URL;
@@ -23,7 +23,16 @@ const s3Key = `backups/db-backup-${timestamp}.sql`;
 async function backup() {
   try {
     console.log('Starting database backup...');
-    execSync(`pg_dump "${DB_URL}" > "${backupFile}"`, { stdio: 'inherit' });
+    const outFd = openSync(backupFile, 'w');
+    try {
+      const result = spawnSync('pg_dump', [DB_URL], { stdio: ['ignore', outFd, 'inherit'] });
+      if (result.error) throw result.error;
+      if (result.status !== 0) {
+        throw new Error(`pg_dump exited with status ${result.status}`);
+      }
+    } finally {
+      closeSync(outFd);
+    }
 
     console.log('Uploading to S3...');
     const fileContent = readFileSync(backupFile);

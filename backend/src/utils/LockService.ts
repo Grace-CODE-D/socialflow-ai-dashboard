@@ -45,6 +45,8 @@ class AsyncMutex {
   private currentQueue: Array<() => void> = [];
   private locked = false;
 
+  constructor(private readonly onIdle?: () => void) {}
+
   async acquire(): Promise<() => void> {
     if (!this.locked) {
       this.locked = true;
@@ -64,6 +66,7 @@ class AsyncMutex {
       next?.();
     } else {
       this.locked = false;
+      this.onIdle?.();
     }
   }
 }
@@ -73,10 +76,25 @@ const localMutexes = new Map<string, AsyncMutex>();
 function getLocalMutex(key: string): AsyncMutex {
   let mutex = localMutexes.get(key);
   if (!mutex) {
-    mutex = new AsyncMutex();
+    // Evict this entry once it goes idle (no queue, not locked) so that
+    // high-cardinality keys (e.g. per-job lock names) don't accumulate in
+    // the map forever while running under the local-fallback path.
+    mutex = new AsyncMutex(() => {
+      if (localMutexes.get(key) === mutex) {
+        localMutexes.delete(key);
+      }
+    });
     localMutexes.set(key, mutex);
   }
   return mutex;
+}
+
+/**
+ * Number of distinct keys currently tracked by the local-mutex fallback.
+ * Exposed for tests/diagnostics — entries are evicted as soon as they go idle.
+ */
+export function getLocalMutexCount(): number {
+  return localMutexes.size;
 }
 
 export interface LockOptions {
@@ -126,17 +144,20 @@ export const LockService = {
       // keep running after the lock may have already expired in Redis.
       const abortController = new AbortController();
       let currentLock = lock;
-      const extendInterval = setInterval(async () => {
-        try {
-          currentLock = await currentLock.extend(duration);
-          logger.debug(`Lock extended: ${lockKey}`);
-        } catch (extErr) {
-          logger.warn(`Failed to extend lock: ${lockKey}`, {
-            error: extErr instanceof Error ? extErr.message : String(extErr),
-          });
-          abortController.abort(extErr);
-        }
-      }, Math.floor(duration / 2));
+      const extendInterval = setInterval(
+        async () => {
+          try {
+            currentLock = await currentLock.extend(duration);
+            logger.debug(`Lock extended: ${lockKey}`);
+          } catch (extErr) {
+            logger.warn(`Failed to extend lock: ${lockKey}`, {
+              error: extErr instanceof Error ? extErr.message : String(extErr),
+            });
+            abortController.abort(extErr);
+          }
+        },
+        Math.floor(duration / 2),
+      );
 
       const aborted = new Promise<never>((_, reject) => {
         abortController.signal.addEventListener('abort', () =>

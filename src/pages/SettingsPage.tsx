@@ -6,6 +6,7 @@ import { TranslationPanel } from '../components/TranslationPanel';
 import WebhookManager from '../components/WebhookManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { usePasswordRotation } from '../hooks/usePasswordRotation';
 
 type Tab = 'profile' | 'security' | 'integrations' | 'localization';
 
@@ -25,13 +26,10 @@ export const SettingsPage: React.FC = () => {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>('profile');
   const [pwOpen, setPwOpen] = useState(false);
-  const [pwLoading, setPwLoading] = useState(false);
+  const { changePassword, isLoading: pwLoading, error: pwError } = usePasswordRotation();
 
-  const handlePasswordSubmit = async (): Promise<void> => {
-    setPwLoading(true);
-    // Frontend-only: simulate the rotation round-trip.
-    await new Promise((r) => setTimeout(r, 700));
-    setPwLoading(false);
+  const handlePasswordSubmit = async (currentPassword: string, newPassword: string): Promise<void> => {
+    await changePassword(currentPassword, newPassword);
     setPwOpen(false);
     toast('Password updated successfully.', 'success');
   };
@@ -140,6 +138,7 @@ export const SettingsPage: React.FC = () => {
         onClose={() => setPwOpen(false)}
         onSubmit={handlePasswordSubmit}
         isLoading={pwLoading}
+        error={pwError ?? undefined}
       />
     </div>
   );

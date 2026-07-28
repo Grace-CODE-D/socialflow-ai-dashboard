@@ -12,6 +12,7 @@ process.env.JWT_SECRET = 'integration-test-secret-32-chars!!';
 process.env.JWT_REFRESH_SECRET = 'integration-refresh-secret-32ch';
 process.env.JWT_EXPIRES_IN = '15m';
 process.env.JWT_REFRESH_EXPIRES_IN = '7d';
+process.env.CSRF_SECRET = 'integration-test-csrf-secret-32-chars!!';
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/socialflow_test';
 process.env.WEBHOOK_SECRET_ENCRYPTION_KEY =
   'a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4';

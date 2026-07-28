@@ -4,8 +4,10 @@ const REQUIRED_ENV: Record<string, string> = {
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
   JWT_SECRET: 'super-secret-jwt-value-at-least-32-chars',
   JWT_REFRESH_SECRET: 'super-secret-refresh-value-at-least-32-chars',
+  CSRF_SECRET: 'super-secret-csrf-value-at-least-32-chars',
   TWITTER_API_KEY: 'twitter-key',
   TWITTER_API_SECRET: 'twitter-secret',
+  STRIPE_SECRET_KEY: 'sk_test_required',
 };
 
 describe('config proxy', () => {
@@ -65,6 +67,30 @@ describe('validateEnv', () => {
       expect(result.REDIS_PORT).toBe(6380);
     });
 
+    it('REDIS_URL is undefined when absent', () => {
+      const result = validateEnv(REQUIRED_ENV);
+      expect(result.REDIS_URL).toBeUndefined();
+    });
+
+    it('accepts a valid REDIS_URL', () => {
+      const result = validateEnv({
+        ...REQUIRED_ENV,
+        REDIS_URL: 'redis://user:pass@redis-host:6380',
+      });
+      expect(result.REDIS_URL).toBe('redis://user:pass@redis-host:6380');
+    });
+
+    it('accepts a TLS REDIS_URL (rediss://)', () => {
+      const result = validateEnv({ ...REQUIRED_ENV, REDIS_URL: 'rediss://redis-host:6380' });
+      expect(result.REDIS_URL).toBe('rediss://redis-host:6380');
+    });
+
+    it('rejects a malformed REDIS_URL', () => {
+      expect(() => validateEnv({ ...REQUIRED_ENV, REDIS_URL: 'not-a-url' })).toThrow(
+        'Environment validation failed',
+      );
+    });
+
     it('coerces REDIS_DB string to number', () => {
       const result = validateEnv({ ...REQUIRED_ENV, REDIS_DB: '2' });
       expect(result.REDIS_DB).toBe(2);
@@ -109,13 +135,19 @@ describe('validateEnv', () => {
     it('accepts valid NODE_ENV values', () => {
       expect(validateEnv({ ...REQUIRED_ENV, NODE_ENV: 'production' }).NODE_ENV).toBe('production');
       expect(validateEnv({ ...REQUIRED_ENV, NODE_ENV: 'test' }).NODE_ENV).toBe('test');
-      expect(validateEnv({ ...REQUIRED_ENV, NODE_ENV: 'development' }).NODE_ENV).toBe('development');
+      expect(validateEnv({ ...REQUIRED_ENV, NODE_ENV: 'development' }).NODE_ENV).toBe(
+        'development',
+      );
     });
 
     it('accepts valid OTEL_EXPORTER values', () => {
-      expect(validateEnv({ ...REQUIRED_ENV, OTEL_EXPORTER: 'honeycomb' }).OTEL_EXPORTER).toBe('honeycomb');
+      expect(validateEnv({ ...REQUIRED_ENV, OTEL_EXPORTER: 'honeycomb' }).OTEL_EXPORTER).toBe(
+        'honeycomb',
+      );
       expect(validateEnv({ ...REQUIRED_ENV, OTEL_EXPORTER: 'otlp' }).OTEL_EXPORTER).toBe('otlp');
-      expect(validateEnv({ ...REQUIRED_ENV, OTEL_EXPORTER: 'jaeger' }).OTEL_EXPORTER).toBe('jaeger');
+      expect(validateEnv({ ...REQUIRED_ENV, OTEL_EXPORTER: 'jaeger' }).OTEL_EXPORTER).toBe(
+        'jaeger',
+      );
     });
 
     it('accepts valid LOG_LEVEL values', () => {
@@ -125,23 +157,31 @@ describe('validateEnv', () => {
     });
 
     it('accepts valid DATA_RETENTION_MODE values', () => {
-      expect(validateEnv({ ...REQUIRED_ENV, DATA_RETENTION_MODE: 'archive' }).DATA_RETENTION_MODE).toBe('archive');
-      expect(validateEnv({ ...REQUIRED_ENV, DATA_RETENTION_MODE: 'delete' }).DATA_RETENTION_MODE).toBe('delete');
+      expect(
+        validateEnv({ ...REQUIRED_ENV, DATA_RETENTION_MODE: 'archive' }).DATA_RETENTION_MODE,
+      ).toBe('archive');
+      expect(
+        validateEnv({ ...REQUIRED_ENV, DATA_RETENTION_MODE: 'delete' }).DATA_RETENTION_MODE,
+      ).toBe('delete');
     });
 
     it('treats optional variables as undefined when absent', () => {
       const result = validateEnv(REQUIRED_ENV);
       expect(result.REDIS_PASSWORD).toBeUndefined();
       expect(result.FACEBOOK_APP_ID).toBeUndefined();
-      expect(result.STRIPE_SECRET_KEY).toBeUndefined();
       expect(result.DEEPL_API_KEY).toBeUndefined();
       expect(result.HONEYCOMB_API_KEY).toBeUndefined();
       expect(result.SLACK_WEBHOOK_URL).toBeUndefined();
     });
 
-    it('accepts optional variables when provided', () => {
+    it('accepts STRIPE_SECRET_KEY when provided', () => {
       const result = validateEnv({ ...REQUIRED_ENV, STRIPE_SECRET_KEY: 'sk_test_123' });
       expect(result.STRIPE_SECRET_KEY).toBe('sk_test_123');
+    });
+
+    it('throws when STRIPE_SECRET_KEY is missing', () => {
+      const { STRIPE_SECRET_KEY: _, ...env } = REQUIRED_ENV;
+      expect(() => validateEnv(env)).toThrow('Environment validation failed');
     });
 
     it('coerces numeric alert thresholds', () => {
@@ -182,6 +222,17 @@ describe('validateEnv', () => {
     it('throws when JWT_REFRESH_SECRET is shorter than 32 characters', () => {
       expect(() => validateEnv({ ...REQUIRED_ENV, JWT_REFRESH_SECRET: 'short-secret' })).toThrow(
         'JWT_REFRESH_SECRET must be at least 32 characters',
+      );
+    });
+
+    it('throws when CSRF_SECRET is missing', () => {
+      const { CSRF_SECRET: _, ...env } = REQUIRED_ENV;
+      expect(() => validateEnv(env)).toThrow('Environment validation failed');
+    });
+
+    it('throws when CSRF_SECRET is shorter than 32 characters', () => {
+      expect(() => validateEnv({ ...REQUIRED_ENV, CSRF_SECRET: 'short-secret' })).toThrow(
+        'CSRF_SECRET must be at least 32 characters',
       );
     });
 
@@ -270,9 +321,9 @@ describe('validateEnv', () => {
     );
 
     // ── DATA_PRUNING_ENABLED boolean transform ──────────────────────────────
-    it('DATA_PRUNING_ENABLED defaults to true when absent', () => {
+    it('DATA_PRUNING_ENABLED defaults to false when absent', () => {
       const result = validateEnv(REQUIRED_ENV);
-      expect(result.DATA_PRUNING_ENABLED).toBe(true);
+      expect(result.DATA_PRUNING_ENABLED).toBe(false);
     });
 
     it.each(['true', '1'])('DATA_PRUNING_ENABLED "%s" enables pruning', (value) => {

@@ -11,8 +11,42 @@ module.exports = [
   },
   // Prevent new files being added directly to src/routes/ (except the legacy
   // v1 aggregator which is being migrated — see backend/docs/architecture.md).
+  // Existing files here are grandfathered in and may still be edited.
   {
     files: ['src/routes/*.ts'],
+    ignores: [
+      'src/routes/admin.ts',
+      'src/routes/ai.ts',
+      'src/routes/analytics.ts',
+      'src/routes/audit.ts',
+      'src/routes/auth.ts',
+      'src/routes/billing.ts',
+      'src/routes/circuitBreaker.ts',
+      'src/routes/config.ts',
+      'src/routes/exports.ts',
+      'src/routes/facebook.ts',
+      'src/routes/health.ts',
+      'src/routes/images.ts',
+      'src/routes/jobs.ts',
+      'src/routes/linkedin.ts',
+      'src/routes/listings.ts',
+      'src/routes/metrics.test.ts',
+      'src/routes/metrics.ts',
+      'src/routes/organizations.ts',
+      'src/routes/posts.ts',
+      'src/routes/predictive.ts',
+      'src/routes/realtime.ts',
+      'src/routes/roles.ts',
+      'src/routes/search.ts',
+      'src/routes/status.ts',
+      'src/routes/tiktok.ts',
+      'src/routes/translation.ts',
+      'src/routes/tts.ts',
+      'src/routes/twitter-webhook.ts',
+      'src/routes/video.ts',
+      'src/routes/webhooks.ts',
+      'src/routes/youtube.ts',
+    ],
     rules: {
       'no-restricted-syntax': [
         'error',
@@ -25,13 +59,23 @@ module.exports = [
     },
   },
   {
+    // Mirrors tsconfig.json's "exclude" — these paths aren't part of the
+    // typed-lint project, so parserOptions.project can't process them.
     files: ['src/**/*.ts'],
+    ignores: [
+      'src/modules/**',
+      'src/shared/**',
+      'src/tests/**',
+      'src/__tests__/database/**',
+      'src/__tests__/integration/**',
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: 'module',
         project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
       },
     },
     plugins: {

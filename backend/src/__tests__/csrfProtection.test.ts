@@ -1,5 +1,6 @@
 /**
  * #614 — CSRF protection for state-changing auth endpoints
+ * #1100 — Unit tests for token generation, double-submit validation, rejection shape
  *
  * Tests cover:
  *  - Cross-origin requests are rejected (403)
@@ -7,14 +8,23 @@
  *  - Bearer-token clients bypass the check (mobile / API clients)
  *  - Referer header used as fallback when Origin is absent
  *  - Missing origin: allowed in non-production, rejected in production
+ *  - Token generation with crypto.randomBytes (deterministic stubs)
+ *  - Double-submit cookie validation (token-session binding)
+ *  - Rejection response shape for all failure modes
  */
 
 // Set required env vars before any module is loaded
-process.env.JWT_SECRET = 'test-secret-csrf';
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-csrf';
+process.env.JWT_SECRET = 'test-secret-csrf-that-is-at-least-32-chars!!';
+process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-csrf-that-is-at-least-32-chars!!';
 process.env.JWT_EXPIRES_IN = '15m';
 process.env.JWT_REFRESH_EXPIRES_IN = '7d';
+process.env.CSRF_SECRET = 'test-csrf-secret-that-is-at-least-32-chars!!';
+process.env.STRIPE_SECRET_KEY = 'sk_test_csrf_suite';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+process.env.TWITTER_API_KEY = process.env.TWITTER_API_KEY || 'test-key';
+process.env.TWITTER_API_SECRET = process.env.TWITTER_API_SECRET || 'test-secret';
 
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { csrfProtection } from '../middleware/csrfProtection';
 
@@ -515,5 +525,210 @@ describe('#614 CSRF protection on /api/auth/* (integration)', () => {
 
       expect(res.status).toBe(403);
     });
+  });
+});
+
+// ── Token generation (crypto.randomBytes) — #1100 ────────────────────────────
+
+describe('#1100 token generation with crypto.randomBytes stubbing', () => {
+  let randomBytesSpy: jest.SpyInstance;
+
+  afterEach(() => {
+    randomBytesSpy?.mockRestore();
+  });
+
+  it('calls crypto.randomBytes with 32 bytes for session ID generation', () => {
+    const deterministicBytes = Buffer.alloc(32, 0xca);
+    randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(deterministicBytes as any);
+
+    process.env.NODE_ENV = 'test';
+    const next = jest.fn() as unknown as NextFunction;
+    const req = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res, cookie } = makeRes();
+
+    csrfProtection(req, res, next);
+
+    expect(randomBytesSpy).toHaveBeenCalledWith(32);
+    expect(next).toHaveBeenCalled();
+
+    const sidCall = cookie.mock.calls.find((c) => c[0] === 'csrf_sid');
+    expect(sidCall).toBeDefined();
+    expect(sidCall?.[1]).toBe(deterministicBytes.toString('hex'));
+  });
+
+  it('generates a deterministic HMAC token from a stubbed session ID', () => {
+    const fakeBytes = Buffer.alloc(32, 0x11);
+    randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(fakeBytes as any);
+
+    process.env.NODE_ENV = 'test';
+    const next = jest.fn() as unknown as NextFunction;
+    const req = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res, cookie } = makeRes();
+
+    csrfProtection(req, res, next);
+
+    const sessionId = fakeBytes.toString('hex');
+    const expectedToken = crypto
+      .createHmac('sha256', process.env.CSRF_SECRET ?? 'dev-csrf-secret-change-me')
+      .update(sessionId)
+      .digest('hex');
+
+    const tokenCall = cookie.mock.calls.find((c) => c[0] === 'csrf_token');
+    expect(tokenCall).toBeDefined();
+    expect(tokenCall?.[1]).toBe(expectedToken);
+  });
+
+  it('produces a hex string of 64 characters (32 bytes) for the session ID', () => {
+    process.env.NODE_ENV = 'test';
+    randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.alloc(32, 0x5f) as any);
+
+    const next = jest.fn() as unknown as NextFunction;
+    const req = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res, cookie } = makeRes();
+
+    csrfProtection(req, res, next);
+
+    const sidCall = cookie.mock.calls.find((c) => c[0] === 'csrf_sid');
+    expect(sidCall?.[1]).toHaveLength(64); // 32 bytes = 64 hex characters
+  });
+});
+
+// ── Double-submit validation rejection shapes — #1100 ────────────────────────
+
+describe('#1100 double-submit cookie CSRF protection', () => {
+  beforeEach(() => {
+    process.env.NODE_ENV = 'test';
+  });
+
+  function cookieValue(cookieMock: jest.Mock, name: string): string {
+    const call = cookieMock.mock.calls.find((args) => args[0] === name);
+    if (!call) throw new Error(`cookie '${name}' was never set`);
+    return call[1] as string;
+  }
+
+  it('POST/PUT/DELETE with matching cookie and header tokens → passes through', () => {
+    // First, establish a session
+    const next1 = jest.fn() as unknown as NextFunction;
+    const first = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res: res1, cookie: cookie1 } = makeRes();
+    csrfProtection(first, res1, next1);
+
+    const sid = cookieValue(cookie1, 'csrf_sid');
+    const token = cookieValue(cookie1, 'csrf_token');
+
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const next2 = jest.fn() as unknown as NextFunction;
+      const req = makeReq({
+        method,
+        headers: {
+          origin: 'http://localhost:3000',
+          cookie: `csrf_sid=${sid}; csrf_token=${token}`,
+          'x-csrf-token': token,
+        },
+      });
+      const { res: res2 } = makeRes();
+
+      csrfProtection(req, res2, next2);
+
+      expect(next2).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('POST/PUT/DELETE with mismatched cookie/header tokens → 403 with { error: CSRF token mismatch } shape', () => {
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const next = jest.fn() as unknown as NextFunction;
+      const req = makeReq({
+        method,
+        headers: {
+          origin: 'http://localhost:3000',
+          cookie: 'csrf_sid=some-session; csrf_token=correct-token',
+          'x-csrf-token': 'different-token',
+        },
+      });
+      const { res, status, json } = makeRes();
+
+      csrfProtection(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('CSRF') }),
+      );
+    }
+  });
+
+  it('missing CSRF cookie → 403', () => {
+    const next = jest.fn() as unknown as NextFunction;
+    const req = makeReq({
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost:3000',
+        cookie: 'csrf_sid=session-id',
+        // csrf_token cookie is missing
+        'x-csrf-token': 'some-header-token',
+      },
+    });
+    const { res, status } = makeRes();
+
+    csrfProtection(req, res, next);
+
+    // csrf_token missing but csrf_sid present → incomplete/suspicious
+    expect(next).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(403);
+  });
+
+  it('missing CSRF header → falls back to cookie token for validation', () => {
+    // First establish a valid session
+    const next1 = jest.fn() as unknown as NextFunction;
+    const first = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res: res1, cookie: cookie1 } = makeRes();
+    csrfProtection(first, res1, next1);
+
+    const sid = cookieValue(cookie1, 'csrf_sid');
+    const token = cookieValue(cookie1, 'csrf_token');
+
+    // When header is absent, the implementation falls back to cookie token
+    const next2 = jest.fn() as unknown as NextFunction;
+    const req = makeReq({
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost:3000',
+        cookie: `csrf_sid=${sid}; csrf_token=${token}`,
+        // x-csrf-token header deliberately omitted
+      },
+    });
+    const { res: res2 } = makeRes();
+
+    csrfProtection(req, res2, next2);
+
+    // Cookie-only double-submit still passes (header is optional; cookie is checked)
+    expect(next2).toHaveBeenCalled();
+  });
+
+  it('cross-session token reuse → 403', () => {
+    // Establish session A
+    const next1 = jest.fn() as unknown as NextFunction;
+    const sessionA = makeReq({ headers: { origin: 'http://localhost:3000' } });
+    const { res: resA, cookie: cookieA } = makeRes();
+    csrfProtection(sessionA, resA, next1);
+    const tokenFromA = cookieValue(cookieA, 'csrf_token');
+
+    // Attacker uses session B's ID but session A's token
+    const next2 = jest.fn() as unknown as NextFunction;
+    const attackerReq = makeReq({
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost:3000',
+        cookie: `csrf_sid=completely-different-session; csrf_token=${tokenFromA}`,
+        'x-csrf-token': tokenFromA,
+      },
+    });
+    const { res: resAttacker, status, json } = makeRes();
+
+    csrfProtection(attackerReq, resAttacker, next2);
+
+    expect(next2).not.toHaveBeenCalled();
+    expect(status).toHaveBeenCalledWith(403);
+    expect(json).toHaveBeenCalledWith({ message: 'CSRF check failed: token not bound to session' });
   });
 });

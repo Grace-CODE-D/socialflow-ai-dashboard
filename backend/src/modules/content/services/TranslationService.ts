@@ -189,7 +189,7 @@ class TranslationService {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as any;
     return data.translations[0].text;
   }
 
@@ -217,7 +217,7 @@ class TranslationService {
       },
     );
 
-    const data = await response.json();
+    const data = await response.json() as any;
     return data.data.translations[0].translatedText;
   }
 

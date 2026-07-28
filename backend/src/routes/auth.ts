@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { register, login, refresh, logout, changePassword } from '../controllers/auth';
 import { validate } from '../middleware/validate';
 import { credentialsSchema, refreshTokenSchema, changePasswordSchema } from '../schemas/auth';
-import { authenticate } from '../middleware/authenticate';
+import { authenticate, AuthRequest } from '../middleware/authenticate';
+import { sseTicketService } from '../services/SSETicketService';
 
 const router = Router();
 
@@ -131,5 +132,43 @@ router.post('/logout', validate(refreshTokenSchema), logout);
  *         description: Unauthorized
  */
 router.post('/change-password', authenticate, validate(changePasswordSchema), changePassword);
+
+/**
+ * @openapi
+ * /auth/sse-ticket:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Generate a short-lived SSE ticket for real-time connections
+ *     description: |
+ *       Returns a single-use, 30-second ticket for establishing SSE connections
+ *       without exposing the long-lived JWT in URL query parameters.
+ *       The ticket can only be used once and expires after 30 seconds.
+ *     responses:
+ *       200:
+ *         description: SSE ticket generated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ticket:
+ *                   type: string
+ *                   description: Single-use SSE ticket (hex-encoded, 64 chars)
+ *                 expiresIn:
+ *                   type: number
+ *                   description: TTL in seconds (always 30)
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/sse-ticket', authenticate, (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    res.status(401).json({ message: 'Unauthorized' });
+    return;
+  }
+
+  const ticket = sseTicketService.generateTicket(userId);
+  res.status(200).json({ ticket, expiresIn: 30 });
+});
 
 export default router;
