@@ -1,3 +1,5 @@
+import { prisma } from '../lib/prisma';
+
 /**
  * All granular permissions in the system.
  * Format: resource:action
@@ -40,26 +42,37 @@ export const ROLES: Record<RoleName, Role> = {
   },
 };
 
-// In-memory user→role assignments (replace with DB in production)
-const userRoles = new Map<string, RoleName>();
-
+/**
+ * User→role assignments, persisted in Postgres via the `RoleAssignment`
+ * table. Durable across restarts and shared across all replicas — unlike a
+ * process-local Map, every pod reads/writes the same row for a given user.
+ */
 export const RoleStore = {
-  assign: (userId: string, role: RoleName): void => {
-    userRoles.set(userId, role);
+  assign: async (userId: string, role: RoleName): Promise<void> => {
+    await prisma.roleAssignment.upsert({
+      where: { userId },
+      create: { userId, role },
+      update: { role },
+    });
   },
 
-  getRole: (userId: string): Role | undefined => {
-    const name = userRoles.get(userId);
+  getRole: async (userId: string): Promise<Role | undefined> => {
+    const name = await RoleStore.getRoleName(userId);
     return name ? ROLES[name] : undefined;
   },
 
-  getRoleName: (userId: string): RoleName | undefined => userRoles.get(userId),
+  getRoleName: async (userId: string): Promise<RoleName | undefined> => {
+    const assignment = await prisma.roleAssignment.findUnique({ where: { userId } });
+    return (assignment?.role as RoleName | undefined) ?? undefined;
+  },
 
-  hasPermission: (userId: string, permission: Permission): boolean => {
-    const role = RoleStore.getRole(userId);
+  hasPermission: async (userId: string, permission: Permission): Promise<boolean> => {
+    const role = await RoleStore.getRole(userId);
     return role?.permissions.includes(permission) ?? false;
   },
 
-  listAll: (): Array<{ userId: string; role: RoleName }> =>
-    [...userRoles.entries()].map(([userId, role]) => ({ userId, role })),
+  listAll: async (): Promise<Array<{ userId: string; role: RoleName }>> => {
+    const assignments: Array<{ userId: string; role: string }> = await prisma.roleAssignment.findMany();
+    return assignments.map((a) => ({ userId: a.userId, role: a.role as RoleName }));
+  },
 };
