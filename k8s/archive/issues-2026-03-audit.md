@@ -1,4 +1,12 @@
-# SocialFlow AI Dashboard — Issue Tracker
+# SocialFlow AI Dashboard — Issue Tracker (ARCHIVED, resolved historical snapshot)
+
+> **Archived 2026-07-26.** This document is a point-in-time audit from March 2026. A
+> re-verification against the current codebase (2026-07-26) confirmed 36 of the 40 findings
+> below are already fixed — do not treat this file as a live checklist or re-implement fixes
+> for items it describes. The handful of items still genuinely open were re-filed, verified,
+> as [`k8s/open-issues.md`](../open-issues.md).
+>
+> Original snapshot notes below are preserved for historical context only.
 
 > 40 detailed engineering issues derived from a full codebase audit (March 2026).
 > Each issue includes context, current behaviour, expected behaviour, and suggested implementation steps.

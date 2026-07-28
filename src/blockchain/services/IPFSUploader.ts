@@ -1,5 +1,6 @@
 import { AppError } from '../../utils/AppError';
 import { ErrorCode } from '../../constants/ErrorCodes';
+import { withSpan } from '../../instrumentation';
 import {
   IPFSClient,
   IPFSUploadResult,
@@ -29,6 +30,14 @@ export class IPFSUploader {
   }
 
   private async uploadFileSimple(file: File, _onProgress?: (a: number, b: number) => void) {
+    return withSpan(
+      'ipfs.uploadFileSimple',
+      { 'ipfs.provider': this.client.config.provider, 'file.size': file.size },
+      () => this.doUploadFileSimple(file),
+    );
+  }
+
+  private async doUploadFileSimple(file: File) {
     const info = this.client.getProviderInfo()
     if (this.client.config.provider === 'web3') {
       const form = new FormData()

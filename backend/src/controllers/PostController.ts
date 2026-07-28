@@ -1,13 +1,10 @@
 import { Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
-import { AuthRequest } from '../middleware/authMiddleware';
+import { AuthRequest } from '../middleware/authenticate';
 import { ModerationService } from '../services/ModerationService';
 import { BadRequestError, NotFoundError } from '../lib/errors';
-import { createLogger } from '../lib/logger';
 import { indexPost, deletePost as deleteSearchPost } from '../services/SearchService';
-
-const logger = createLogger('post-controller');
 
 export async function createPost(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -19,15 +16,10 @@ export async function createPost(req: AuthRequest, res: Response, next: NextFunc
       mediaUrls?: string[];
     };
 
-    // Run moderation before persisting
-    let moderation;
-    try {
-      moderation = await ModerationService.moderate(content);
-    } catch (err) {
-      logger.error('Moderation check failed', { error: (err as Error).message });
-      // Fail open — log the error but don't block the post if the API is down
-      moderation = { flagged: false, blocked: false, categories: {}, scores: {} };
-    }
+    // Run moderation before persisting. ModerationService itself decides
+    // fail-open vs fail-closed behaviour (via MODERATION_MODE) when the
+    // provider is unavailable — do not swallow that decision here.
+    const moderation = await ModerationService.moderate(content);
 
     if (moderation.blocked) {
       throw new BadRequestError(
@@ -89,13 +81,7 @@ export async function updatePost(req: AuthRequest, res: Response, next: NextFunc
     }
 
     if (content !== undefined) {
-      let moderation;
-      try {
-        moderation = await ModerationService.moderate(content);
-      } catch (err) {
-        logger.error('Moderation check failed', { error: (err as Error).message });
-        moderation = { flagged: false, blocked: false, categories: {}, scores: {} };
-      }
+      const moderation = await ModerationService.moderate(content);
 
       if (moderation.blocked) {
         throw new BadRequestError(

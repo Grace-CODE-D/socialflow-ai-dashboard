@@ -50,8 +50,8 @@ function getLockService() {
     LockError: Redlock.LockError,
   }));
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require('../utils/LockService').LockService as typeof import('../utils/LockService').LockService;
+  return require('../utils/LockService')
+    .LockService as typeof import('../utils/LockService').LockService;
 }
 
 // ── Setup / teardown ────────────────────────────────────────────────────────
@@ -136,7 +136,10 @@ describe('LockService.withLock – TTL extension', () => {
     let resolveOp!: () => void;
     const opPromise = LockService.withLock(
       'extend-key',
-      () => new Promise<void>((res) => { resolveOp = res; }),
+      () =>
+        new Promise<void>((res) => {
+          resolveOp = res;
+        }),
       { duration },
     );
 
@@ -177,7 +180,10 @@ describe('LockService.withLock – TTL extension', () => {
     let resolveOp!: () => void;
     const opPromise = LockService.withLock(
       'extend-fail-key',
-      () => new Promise<void>((res) => { resolveOp = res; }),
+      () =>
+        new Promise<void>((res) => {
+          resolveOp = res;
+        }),
       { duration: 1000 },
     );
 
@@ -210,7 +216,8 @@ describe('LockService.withLock – local AsyncMutex fallback', () => {
     (Redlock as unknown as jest.Mock).mockImplementation(() => {
       throw new Error('Redis connection refused');
     });
-    const FallbackLockService = require('../utils/LockService').LockService as typeof import('../utils/LockService').LockService;
+    const FallbackLockService = require('../utils/LockService')
+      .LockService as typeof import('../utils/LockService').LockService;
 
     const fn = jest.fn().mockResolvedValue('fallback-result');
     const resultPromise = FallbackLockService.withLock('fallback-key', fn);
@@ -234,7 +241,8 @@ describe('LockService.withLock – local AsyncMutex fallback', () => {
       throw new Error('no redis');
     });
 
-    const FallbackLockService = require('../utils/LockService').LockService as typeof import('../utils/LockService').LockService;
+    const FallbackLockService = require('../utils/LockService')
+      .LockService as typeof import('../utils/LockService').LockService;
 
     const resultPromise = FallbackLockService.withLock('fallback-err', async () => {
       throw new Error('fn error');
@@ -260,7 +268,8 @@ describe('LockService.withLock – local AsyncMutex fallback', () => {
       throw new Error('no redis');
     });
 
-    const FallbackLockService = require('../utils/LockService').LockService as typeof import('../utils/LockService').LockService;
+    const FallbackLockService = require('../utils/LockService')
+      .LockService as typeof import('../utils/LockService').LockService;
 
     const order: string[] = [];
 
@@ -270,7 +279,9 @@ describe('LockService.withLock – local AsyncMutex fallback', () => {
 
     const first = FallbackLockService.withLock('concurrent-key', async () => {
       order.push('first-start');
-      await new Promise<void>((res) => { releaseFirst = res; });
+      await new Promise<void>((res) => {
+        releaseFirst = res;
+      });
       order.push('first-end');
       firstDone();
     });
@@ -291,6 +302,80 @@ describe('LockService.withLock – local AsyncMutex fallback', () => {
     // Second must start only after first finishes
     expect(order).toEqual(['first-start', 'first-end', 'second-start']);
   });
+
+  it('does not retain entries in the local mutex map after release (issue: mutex map leak)', async () => {
+    (Redlock as unknown as jest.Mock).mockImplementation(() => {
+      throw new Error('no redis');
+    });
+
+    jest.resetModules();
+    jest.mock('ioredis');
+    jest.mock('redlock');
+    (Redlock as unknown as jest.Mock).mockImplementation(() => {
+      throw new Error('no redis');
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { LockService: FallbackLockService, getLocalMutexCount } =
+      require('../utils/LockService') as typeof import('../utils/LockService');
+
+    expect(getLocalMutexCount()).toBe(0);
+
+    // Simulate many distinct per-job lock keys (e.g. payout:${groupId}:${job.id}),
+    // each acquired and released sequentially under the fallback path.
+    const KEY_COUNT = 500;
+    for (let i = 0; i < KEY_COUNT; i++) {
+      const resultPromise = FallbackLockService.withLock(`payout:group:${i}`, async () => 'ok');
+      await jest.runAllTimersAsync();
+      await resultPromise;
+    }
+
+    // Every mutex went idle immediately after its single release — none
+    // should remain in the map despite 500 distinct keys having been used.
+    expect(getLocalMutexCount()).toBe(0);
+  });
+
+  it('evicts a key from the local mutex map only once it goes fully idle', async () => {
+    (Redlock as unknown as jest.Mock).mockImplementation(() => {
+      throw new Error('no redis');
+    });
+
+    jest.useRealTimers();
+
+    jest.resetModules();
+    jest.mock('ioredis');
+    jest.mock('redlock');
+    (Redlock as unknown as jest.Mock).mockImplementation(() => {
+      throw new Error('no redis');
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { LockService: FallbackLockService, getLocalMutexCount } =
+      require('../utils/LockService') as typeof import('../utils/LockService');
+
+    let releaseFirst!: () => void;
+    const first = FallbackLockService.withLock(
+      'shared-key',
+      () =>
+        new Promise<void>((res) => {
+          releaseFirst = res;
+        }),
+    );
+
+    await new Promise((res) => setImmediate(res));
+
+    // A second caller queues behind the first — the key must stay in the
+    // map while it is still in use.
+    const second = FallbackLockService.withLock('shared-key', async () => 'ok');
+    expect(getLocalMutexCount()).toBe(1);
+
+    releaseFirst();
+    await first;
+    await second;
+
+    // Only once the last waiter has released does the entry get evicted.
+    expect(getLocalMutexCount()).toBe(0);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -304,7 +389,9 @@ describe('LockService.withLock – lock acquisition failure', () => {
 
     const LockService = getLockService();
 
-    const resultPromise = LockService.withLock('contested-key', async () => 'ok', { duration: 1000 });
+    const resultPromise = LockService.withLock('contested-key', async () => 'ok', {
+      duration: 1000,
+    });
     await jest.runAllTimersAsync();
 
     await expect(resultPromise).rejects.toThrow('Could not acquire lock for contested-key');
@@ -315,7 +402,9 @@ describe('LockService.withLock – lock acquisition failure', () => {
 
     const LockService = getLockService();
 
-    const resultPromise = LockService.withLock('unexpected-err-key', async () => 'ok', { duration: 1000 });
+    const resultPromise = LockService.withLock('unexpected-err-key', async () => 'ok', {
+      duration: 1000,
+    });
     await jest.runAllTimersAsync();
 
     await expect(resultPromise).rejects.toThrow('Unexpected Redis error');

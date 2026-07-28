@@ -3,7 +3,7 @@
  * org scoping, and media URL attachment. Closes #1068
  */
 import { Response, NextFunction } from 'express';
-import { AuthRequest } from '../middleware/authMiddleware';
+import { AuthRequest } from '../middleware/authenticate';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -106,7 +106,9 @@ beforeEach(() => {
 
 describe('createPost', () => {
   it('creates a post and responds with 201', async () => {
-    const req = makeReq({ body: { content: 'Hello world', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'Hello world', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -143,7 +145,9 @@ describe('createPost', () => {
   });
 
   it('omits mediaUrls from create data when not provided', async () => {
-    const req = makeReq({ body: { content: 'No media', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'No media', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -160,7 +164,9 @@ describe('createPost', () => {
       scores: { hate: 0.95 },
       reason: 'hate speech detected',
     });
-    const req = makeReq({ body: { content: 'Bad content', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'Bad content', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -177,7 +183,9 @@ describe('createPost', () => {
       scores: { violence: 0.5 },
       reason: 'mild violence',
     });
-    const req = makeReq({ body: { content: 'Flagged content', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'Flagged content', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -187,21 +195,25 @@ describe('createPost', () => {
     );
   });
 
-  it('fails open and still creates the post when ModerationService throws', async () => {
-    mockModerate.mockRejectedValue(new Error('OpenAI API unavailable'));
+  it('fails closed — rejects and does not create the post when ModerationService throws (#1299)', async () => {
+    const moderationError = new Error('Moderation unavailable: OPENAI_API_KEY not set');
+    mockModerate.mockRejectedValue(moderationError);
     const req = makeReq({ body: { content: 'Hello', platform: 'twitter', organizationId: ORG_A } });
     const res = makeRes();
 
     await createPost(req, res, next);
 
-    expect(mockCreate).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(201);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(moderationError);
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it('fires indexPost with the new post data after creation', async () => {
     const post = makePost({ createdAt: new Date('2025-06-01T12:00:00Z') });
     mockCreate.mockResolvedValue(post);
-    const req = makeReq({ body: { content: 'Hello world', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'Hello world', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -221,12 +233,16 @@ describe('createPost', () => {
     await createPost(req, res, next);
 
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ scheduledAt: new Date(scheduledAt) }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ scheduledAt: new Date(scheduledAt) }),
+      }),
     );
   });
 
   it('sets scheduledAt to null when not provided', async () => {
-    const req = makeReq({ body: { content: 'Immediate', platform: 'twitter', organizationId: ORG_A } });
+    const req = makeReq({
+      body: { content: 'Immediate', platform: 'twitter', organizationId: ORG_A },
+    });
     const res = makeRes();
 
     await createPost(req, res, next);
@@ -270,13 +286,19 @@ describe('updatePost', () => {
   it('updates an existing post and returns 200 with the updated post', async () => {
     const updated = makePost({ content: 'Updated content' });
     mockUpdate.mockResolvedValue(updated);
-    const req = makeReq({ params: { id: POST_ID }, body: { content: 'Updated content' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'Updated content' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
 
     expect(mockFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ id: POST_ID, organizationId: ORG_A }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ id: POST_ID, organizationId: ORG_A }),
+      }),
     );
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -290,7 +312,11 @@ describe('updatePost', () => {
 
   it('returns 404 when the post does not exist', async () => {
     mockFindFirst.mockResolvedValue(null);
-    const req = makeReq({ params: { id: 'ghost-id' }, body: { content: 'Updated' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: 'ghost-id' },
+      body: { content: 'Updated' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -301,7 +327,11 @@ describe('updatePost', () => {
 
   it('org scoping: returns 404 (not 403) when the post belongs to a different org', async () => {
     mockFindFirst.mockResolvedValue(null); // ORG_B scoped query finds nothing
-    const req = makeReq({ params: { id: POST_ID }, body: { content: 'Hijack' }, activeOrgId: ORG_B });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'Hijack' },
+      activeOrgId: ORG_B,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -316,9 +346,17 @@ describe('updatePost', () => {
 
   it('blocks the update and calls next with CONTENT_BLOCKED when moderation rejects the new content', async () => {
     mockModerate.mockResolvedValue({
-      flagged: true, blocked: true, reason: 'policy violation', categories: {}, scores: {},
+      flagged: true,
+      blocked: true,
+      reason: 'policy violation',
+      categories: {},
+      scores: {},
     });
-    const req = makeReq({ params: { id: POST_ID }, body: { content: 'Blocked content' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'Blocked content' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -339,8 +377,28 @@ describe('updatePost', () => {
     );
   });
 
+  it('fails closed — rejects and does not update the post when ModerationService throws (#1299)', async () => {
+    const moderationError = new Error('Moderation API returned 500');
+    mockModerate.mockRejectedValue(moderationError);
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'Updated' },
+      activeOrgId: ORG_A,
+    });
+    const res = makeRes();
+
+    await updatePost(req, res, next);
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(moderationError);
+  });
+
   it('skips moderation when content is not part of the update payload', async () => {
-    const req = makeReq({ params: { id: POST_ID }, body: { platform: 'linkedin' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { platform: 'linkedin' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -357,12 +415,18 @@ describe('updatePost', () => {
     await updatePost(req, res, next);
 
     expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ scheduledAt: new Date(scheduledAt) }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ scheduledAt: new Date(scheduledAt) }),
+      }),
     );
   });
 
   it('does not include fields that were absent from the update payload', async () => {
-    const req = makeReq({ params: { id: POST_ID }, body: { content: 'Only content' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'Only content' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -377,7 +441,11 @@ describe('updatePost', () => {
   it('forwards errors to next when prisma.post.update throws', async () => {
     const dbError = new Error('DB write failed');
     mockUpdate.mockRejectedValue(dbError);
-    const req = makeReq({ params: { id: POST_ID }, body: { content: 'New content' }, activeOrgId: ORG_A });
+    const req = makeReq({
+      params: { id: POST_ID },
+      body: { content: 'New content' },
+      activeOrgId: ORG_A,
+    });
     const res = makeRes();
 
     await updatePost(req, res, next);
@@ -395,7 +463,9 @@ describe('deletePost', () => {
 
     await deletePost(req, res, next);
 
-    expect(mockPrismaDelete).toHaveBeenCalledWith(expect.objectContaining({ where: { id: POST_ID } }));
+    expect(mockPrismaDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: POST_ID } }),
+    );
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.end).toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();

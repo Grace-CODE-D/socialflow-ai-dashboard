@@ -1,81 +1,48 @@
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
 import type { WebhookDelivery, WebhookSubscription } from '../api/models';
-import { SUPPORTED_EVENTS, type WebhookEventType } from '@socialflow/shared';
+import { WebhooksService as GeneratedWebhooksService } from '../api/services/WebhooksService';
 
-// ── Frontend-only webhook store ───────────────────────────────────────────────
-// The generated WebhooksService talks to a backend that is not running in this
-// demo. To keep every button functional in frontend-only mode, we back the
-// manager with an in-memory store that mirrors the same async surface.
+// Event types sourced from src/schemas/webhooks.ts (frontend mirror)
+type WebhookEventType =
+  | 'post.published'
+  | 'post.failed'
+  | 'analytics.report_ready'
+  | 'blockchain.transaction_completed'
+  | 'blockchain.transaction_failed'
+  | 'system.health_check';
 
-const uid = (): string =>
-  (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, '');
+const SUPPORTED_EVENTS: WebhookEventType[] = [
+  'post.published',
+  'post.failed',
+  'analytics.report_ready',
+  'blockchain.transaction_completed',
+  'blockchain.transaction_failed',
+  'system.health_check',
+];
 
-const store: {
-  webhooks: WebhookSubscription[];
-  deliveries: Record<string, WebhookDelivery[]>;
-} = {
-  webhooks: [
-    {
-      id: uid(),
-      url: 'https://hooks.example.com/socialflow',
-      events: ['post.published', 'post.failed'],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  deliveries: {},
-};
-
-const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-
-function makeDelivery(eventType: WebhookEventType): WebhookDelivery {
-  return {
-    id: uid(),
-    eventType,
-    status: 'success',
-    attempts: 1,
-    responseStatus: 200,
-    createdAt: new Date().toISOString(),
-  };
-}
+// ── Real backend-backed webhook client ────────────────────────────────────────
+// Talks to the generated OpenAPI client (src/api/services/WebhooksService),
+// which is authenticated via configureApi() at app startup (see src/main.tsx).
 
 const WebhooksService = {
   async listWebhooks(): Promise<WebhookSubscription[]> {
-    await delay();
-    return [...store.webhooks];
+    return GeneratedWebhooksService.getWebhooks();
   },
   async createWebhook(input: { url: string; secret: string; events: WebhookEventType[] }): Promise<WebhookSubscription> {
-    await delay();
-    const created: WebhookSubscription = {
-      id: uid(),
-      url: input.url,
-      events: input.events,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-    store.webhooks = [...store.webhooks, created];
-    return created;
+    return GeneratedWebhooksService.postWebhooks({ requestBody: input });
   },
   async deleteWebhook(id: string): Promise<void> {
-    await delay();
-    store.webhooks = store.webhooks.filter((w) => w.id !== id);
-    delete store.deliveries[id];
+    await GeneratedWebhooksService.deleteWebhooks({ id });
   },
   async testWebhook(id: string, input: { eventType: WebhookEventType }): Promise<{ message: string }> {
-    await delay();
-    const delivery = makeDelivery(input.eventType);
-    store.deliveries[id] = [delivery, ...(store.deliveries[id] ?? [])];
-    return { message: `Test "${input.eventType}" delivered (200 OK).` };
+    const result = await GeneratedWebhooksService.postWebhooksTest({ id, requestBody: input });
+    return { message: result?.message ?? `Test "${input.eventType}" sent.` };
   },
   async listDeliveries(id: string): Promise<WebhookDelivery[]> {
-    await delay();
-    return [...(store.deliveries[id] ?? [])];
+    return GeneratedWebhooksService.getWebhooksDeliveries({ id });
   },
-  async replayDelivery(id: string, _deliveryId: string): Promise<void> {
-    await delay();
-    const original = (store.deliveries[id] ?? []).find((d) => d.id === _deliveryId);
-    const replayed = makeDelivery((original?.eventType as WebhookEventType) ?? 'post.published');
-    store.deliveries[id] = [replayed, ...(store.deliveries[id] ?? [])];
+  async replayDelivery(id: string, deliveryId: string): Promise<void> {
+    await GeneratedWebhooksService.postWebhooksDeliveriesReplay({ id, deliveryId });
   },
 };
 
@@ -340,7 +307,7 @@ function CreateForm({ onCreated }: CreateFormProps) {
     try {
       // Generate a secure random secret — shown once to the user after creation
       const secret = generateSecret();
-      const created = await WebhooksService.createWebhook({ url, secret, events });
+      const created = await WebhooksService.postWebhooks({ requestBody: { url, secret, events } });
       onCreated(created, secret);
       setUrl(''); setEvents([]);
     } catch (e: any) {
@@ -396,8 +363,8 @@ function TestModal({ webhookId, onClose }: { webhookId: string; onClose: () => v
     setBusy(true);
     setResult(null);
     try {
-      const res = await WebhooksService.testWebhook(webhookId, { eventType });
-      setResult(res.message ?? 'Test event sent.');
+      const res = await WebhooksService.postWebhooksTest({ id: webhookId, requestBody: { eventType } });
+      setResult(res?.message ?? 'Test event sent.');
     } catch (e: any) {
       setResult(`Error: ${e?.message ?? 'unknown'}`);
     } finally {
@@ -444,7 +411,7 @@ export default function WebhookManager() {
   const load = useCallback(async () => {
     dispatch({ type: 'LOAD_START' });
     try {
-      const webhooks = await WebhooksService.listWebhooks();
+      const webhooks = await WebhooksService.getWebhooks();
       dispatch({ type: 'LOAD_OK', webhooks });
     } catch (e: any) {
       dispatch({ type: 'LOAD_ERR', error: e?.message ?? 'Failed to load webhooks.' });
@@ -457,7 +424,7 @@ export default function WebhookManager() {
     dispatch({ type: 'TOGGLE_EXPAND', id });
     if (state.expandedId !== id && !state.deliveries[id]) {
       try {
-        const deliveries = await WebhooksService.listDeliveries(id);
+        const deliveries = await WebhooksService.getWebhooksDeliveries({ id });
         dispatch({ type: 'DELIVERIES_OK', id, deliveries });
       } catch {
         dispatch({ type: 'DELIVERIES_OK', id, deliveries: [] });
@@ -468,7 +435,7 @@ export default function WebhookManager() {
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this webhook?')) return;
     try {
-      await WebhooksService.deleteWebhook(id);
+      await WebhooksService.deleteWebhooks({ id });
       dispatch({ type: 'REMOVE', id });
     } catch (e: any) {
       alert(e?.message ?? 'Delete failed.');
@@ -478,9 +445,9 @@ export default function WebhookManager() {
   async function handleReplay(webhookId: string, deliveryId: string) {
     dispatch({ type: 'REPLAY_START', webhookId, deliveryId });
     try {
-      await WebhooksService.replayDelivery(webhookId, deliveryId);
+      await WebhooksService.postWebhooksDeliveriesReplay({ id: webhookId, deliveryId });
       // Refresh deliveries for this webhook
-      const deliveries = await WebhooksService.listDeliveries(webhookId);
+      const deliveries = await WebhooksService.getWebhooksDeliveries({ id: webhookId });
       dispatch({ type: 'DELIVERIES_OK', id: webhookId, deliveries });
     } catch (e: any) {
       alert(e?.message ?? 'Replay failed.');

@@ -43,6 +43,7 @@ jest.mock('../services/FacebookService', () => ({
 }));
 
 import { startFacebookTokenRefreshJob, FACEBOOK_TOKEN_KEY } from '../jobs/facebookTokenRefreshJob';
+import { encryptToken, decryptToken } from '../utils/tokenEncryption';
 
 const NOW = Date.now();
 const SOON = NOW + 5 * 24 * 60 * 60 * 1000;   // 5 days — within 10-day threshold
@@ -67,7 +68,7 @@ function setupScan(keys: string[]) {
 describe('facebookTokenRefreshJob', () => {
   it('refreshes tokens expiring within 10 days', async () => {
     const key = FACEBOOK_TOKEN_KEY('user-1');
-    hashStore[key] = { accessToken: 'old-token', expiresAt: String(SOON) };
+    hashStore[key] = { accessToken: encryptToken('old-token'), expiresAt: String(SOON) };
     setupScan([key]);
 
     const newExpiry = NOW + 60 * 86400_000;
@@ -75,17 +76,38 @@ describe('facebookTokenRefreshJob', () => {
 
     const result = await capturedProcessor!({ id: 'job-1', data: {} });
 
+    // The job must decrypt the stored token before using it...
     expect(mockGetLongLivedUserToken).toHaveBeenCalledWith('old-token');
-    expect(mockRedis.hset).toHaveBeenCalledWith(key, {
-      accessToken: 'new-token',
-      expiresAt: String(newExpiry),
-    });
+
+    // ...and re-encrypt the refreshed token before writing it back.
+    const [, hsetData] = mockRedis.hset.mock.calls.find(([k]) => k === key)!;
+    expect(hsetData.expiresAt).toBe(String(newExpiry));
+    expect(hsetData.accessToken).not.toBe('new-token');
+    expect(decryptToken(hsetData.accessToken)).toBe('new-token');
     expect(result).toEqual({ refreshed: 1, failed: 0 });
+  });
+
+  it('stores the raw Redis hash value encrypted, never as the plaintext token', async () => {
+    const key = FACEBOOK_TOKEN_KEY('user-encryption-check');
+    hashStore[key] = { accessToken: encryptToken('super-secret-fb-token'), expiresAt: String(SOON) };
+    setupScan([key]);
+
+    mockGetLongLivedUserToken.mockResolvedValueOnce({
+      accessToken: 'refreshed-secret-token',
+      expiresAt: NOW + 60 * 86400_000,
+    });
+
+    await capturedProcessor!({ id: 'job-encryption-check', data: {} });
+
+    const rawValueInRedis = hashStore[key].accessToken;
+    expect(rawValueInRedis).not.toBe('refreshed-secret-token');
+    expect(rawValueInRedis).not.toContain('refreshed-secret-token');
+    expect(decryptToken(rawValueInRedis)).toBe('refreshed-secret-token');
   });
 
   it('skips tokens not expiring within 10 days', async () => {
     const key = FACEBOOK_TOKEN_KEY('user-2');
-    hashStore[key] = { accessToken: 'valid-token', expiresAt: String(LATER) };
+    hashStore[key] = { accessToken: encryptToken('valid-token'), expiresAt: String(LATER) };
     setupScan([key]);
 
     const result = await capturedProcessor!({ id: 'job-2', data: {} });
@@ -96,7 +118,7 @@ describe('facebookTokenRefreshJob', () => {
 
   it('counts failures without throwing when refresh fails', async () => {
     const key = FACEBOOK_TOKEN_KEY('user-3');
-    hashStore[key] = { accessToken: 'expiring', expiresAt: String(SOON) };
+    hashStore[key] = { accessToken: encryptToken('expiring'), expiresAt: String(SOON) };
     setupScan([key]);
 
     mockGetLongLivedUserToken.mockRejectedValueOnce(new Error('Facebook API error'));
@@ -106,11 +128,22 @@ describe('facebookTokenRefreshJob', () => {
     expect(result).toEqual({ refreshed: 0, failed: 1 });
   });
 
+  it('counts a decrypt failure as a failure without crashing the job', async () => {
+    const key = FACEBOOK_TOKEN_KEY('user-corrupt');
+    hashStore[key] = { accessToken: 'not-a-valid-encrypted-payload', expiresAt: String(SOON) };
+    setupScan([key]);
+
+    const result = await capturedProcessor!({ id: 'job-corrupt', data: {} });
+
+    expect(mockGetLongLivedUserToken).not.toHaveBeenCalled();
+    expect(result).toEqual({ refreshed: 0, failed: 1 });
+  });
+
   it('handles mixed success and failure across multiple tokens', async () => {
     const key1 = FACEBOOK_TOKEN_KEY('user-4');
     const key2 = FACEBOOK_TOKEN_KEY('user-5');
-    hashStore[key1] = { accessToken: 'tok1', expiresAt: String(SOON) };
-    hashStore[key2] = { accessToken: 'tok2', expiresAt: String(SOON) };
+    hashStore[key1] = { accessToken: encryptToken('tok1'), expiresAt: String(SOON) };
+    hashStore[key2] = { accessToken: encryptToken('tok2'), expiresAt: String(SOON) };
     setupScan([key1, key2]);
 
     mockGetLongLivedUserToken
@@ -132,7 +165,7 @@ describe('facebookTokenRefreshJob', () => {
 
   it('marks token as disconnected and does not count revocation as failure', async () => {
     const key = FACEBOOK_TOKEN_KEY('user-revoked');
-    hashStore[key] = { accessToken: 'dead-token', expiresAt: String(SOON) };
+    hashStore[key] = { accessToken: encryptToken('dead-token'), expiresAt: String(SOON) };
     setupScan([key]);
 
     // Facebook error code 190 + subcode 458 = user removed app
@@ -161,7 +194,7 @@ describe('facebookTokenRefreshJob', () => {
       mockGetLongLivedUserToken.mockReset();
 
       const key = FACEBOOK_TOKEN_KEY(`user-sub-${subcode}`);
-      hashStore[key] = { accessToken: 'tok', expiresAt: String(SOON) };
+      hashStore[key] = { accessToken: encryptToken('tok'), expiresAt: String(SOON) };
       setupScan([key]);
 
       mockGetLongLivedUserToken.mockRejectedValueOnce(
@@ -177,7 +210,7 @@ describe('facebookTokenRefreshJob', () => {
 
   it('counts a non-revocation Facebook error as a retryable failure', async () => {
     const key = FACEBOOK_TOKEN_KEY('user-apierr');
-    hashStore[key] = { accessToken: 'tok', expiresAt: String(SOON) };
+    hashStore[key] = { accessToken: encryptToken('tok'), expiresAt: String(SOON) };
     setupScan([key]);
 
     // code 190 but subcode not in REVOCATION_SUBCODES (999 is not revocation)
@@ -207,8 +240,8 @@ describe('facebookTokenRefreshJob', () => {
   it('processes all keys across multiple Redis SCAN pages', async () => {
     const key1 = FACEBOOK_TOKEN_KEY('page-user-1');
     const key2 = FACEBOOK_TOKEN_KEY('page-user-2');
-    hashStore[key1] = { accessToken: 'tok1', expiresAt: String(SOON) };
-    hashStore[key2] = { accessToken: 'tok2', expiresAt: String(SOON) };
+    hashStore[key1] = { accessToken: encryptToken('tok1'), expiresAt: String(SOON) };
+    hashStore[key2] = { accessToken: encryptToken('tok2'), expiresAt: String(SOON) };
 
     // First SCAN call returns cursor '42' (not '0') to indicate more pages
     mockRedis.scan
@@ -231,9 +264,9 @@ describe('facebookTokenRefreshJob', () => {
     const keyOk = FACEBOOK_TOKEN_KEY('partial-ok');
     const keyFailed = FACEBOOK_TOKEN_KEY('partial-failed');
 
-    hashStore[keyRevoked] = { accessToken: 'dead', expiresAt: String(SOON) };
-    hashStore[keyOk] = { accessToken: 'live', expiresAt: String(SOON) };
-    hashStore[keyFailed] = { accessToken: 'err', expiresAt: String(SOON) };
+    hashStore[keyRevoked] = { accessToken: encryptToken('dead'), expiresAt: String(SOON) };
+    hashStore[keyOk] = { accessToken: encryptToken('live'), expiresAt: String(SOON) };
+    hashStore[keyFailed] = { accessToken: encryptToken('err'), expiresAt: String(SOON) };
     setupScan([keyRevoked, keyOk, keyFailed]);
 
     const newExpiry = NOW + 60 * 86400_000;
