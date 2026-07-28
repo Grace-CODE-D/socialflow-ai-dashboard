@@ -3,8 +3,8 @@ import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { createLogger } from '../lib/logger';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { NotFoundError, ForbiddenError } from '../lib/errors';
-import { dispatchEvent } from '../services/WebhookDispatcher';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../lib/errors';
+import { dispatchEvent, assertSafeUrl } from '../services/WebhookDispatcher';
 import { CreateWebhookInput, UpdateWebhookInput } from '../schemas/webhooks';
 import { parsePageLimit, toSkipTake, buildPageResponse } from '../utils/pagination';
 
@@ -44,6 +44,11 @@ export async function listWebhooks(req: AuthRequest, res: Response, next: NextFu
 export async function createWebhook(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { url, secret, events } = req.body as CreateWebhookInput;
+    try {
+      await assertSafeUrl(url);
+    } catch (err) {
+      throw new BadRequestError(err instanceof Error ? err.message : 'Invalid webhook URL');
+    }
     // Store a hashed secret — never return the raw value after creation
     const hashedSecret = crypto.createHash('sha256').update(secret).digest('hex');
 
@@ -81,6 +86,14 @@ export async function updateWebhook(req: AuthRequest, res: Response, next: NextF
   try {
     await findOwned(req.params.id, req.user!.id);
     const body = req.body as UpdateWebhookInput;
+
+    if (body.url !== undefined) {
+      try {
+        await assertSafeUrl(body.url);
+      } catch (err) {
+        throw new BadRequestError(err instanceof Error ? err.message : 'Invalid webhook URL');
+      }
+    }
 
     const data: Record<string, unknown> = {};
     if (body.url !== undefined) data.url = body.url;

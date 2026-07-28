@@ -5,3 +5,4 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-that-is-at-least
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret-32-chars!!!!!';
 process.env.TWITTER_API_KEY = process.env.TWITTER_API_KEY || 'test-key';
 process.env.TWITTER_API_SECRET = process.env.TWITTER_API_SECRET || 'test-secret';
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';

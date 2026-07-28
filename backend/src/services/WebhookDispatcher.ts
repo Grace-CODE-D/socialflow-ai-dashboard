@@ -25,10 +25,20 @@ function ipToInt(ip: string): number {
 function isPrivateIPv4(ip: string): boolean {
   if (isIP(ip) !== 4) return false;
   const n = ipToInt(ip);
-  return BLOCKED_CIDRS.some(({ base, mask }) => (n & mask) === base);
+  // `& ` on numbers >= 2^31 (e.g. 169.254.0.0 = 2851995648) produces a signed
+  // 32-bit result in JS, which would never === an unsigned `base` — force
+  // both sides back to unsigned before comparing.
+  return BLOCKED_CIDRS.some(({ base, mask }) => ((n & mask) >>> 0) === base);
 }
 
-async function assertSafeUrl(url: string): Promise<void> {
+/**
+ * Validate that a webhook URL is not HTTPS-to-a-blocked-address SSRF bait.
+ * Resolves the hostname and rejects private/loopback/link-local addresses
+ * (including the 169.254.169.254 cloud metadata endpoint). Exported so
+ * callers can re-run the same check at webhook creation/update time, not
+ * only immediately before each delivery — DNS can change between the two.
+ */
+export async function assertSafeUrl(url: string): Promise<void> {
   let parsed: URL;
   try {
     parsed = new URL(url);

@@ -27,7 +27,17 @@ const mockPrisma = {
 jest.mock('../lib/prisma', () => ({ prisma: mockPrisma }));
 
 const mockDispatch = jest.fn();
-jest.mock('../services/WebhookDispatcher', () => ({ dispatchEvent: mockDispatch }));
+const mockAssertSafeUrl = jest.fn().mockImplementation(async (url: string) => {
+  const hostname = new URL(url).hostname;
+  const blocked = ['127.0.0.1', '169.254.169.254', 'localhost'];
+  if (blocked.includes(hostname)) {
+    throw new Error(`Webhook URL resolves to a blocked address: ${url}`);
+  }
+});
+jest.mock('../services/WebhookDispatcher', () => ({
+  dispatchEvent: mockDispatch,
+  assertSafeUrl: mockAssertSafeUrl,
+}));
 
 jest.mock('../middleware/authenticate', () => ({
   authenticate: (_req: Request, _res: Response, next: NextFunction) => next(),
@@ -60,8 +70,8 @@ function authApp(handler: (req: any, res: Response, next: NextFunction) => any) 
     next();
   });
   app.use('/', handler);
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(500).json({ success: false, message: err.message });
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    res.status(err.statusCode ?? 500).json({ success: false, message: err.message });
   });
   return app;
 }
@@ -219,6 +229,30 @@ describe('createWebhook', () => {
         data: expect.objectContaining({ secret: expect.not.stringContaining('at-least-16-chars!') }),
       }),
     );
+  });
+
+  it('rejects a webhook URL resolving to a private/metadata address (SSRF)', async () => {
+    const app = authApp(createWebhook as any);
+    const res = await request(app).post('/').send({
+      url: 'https://169.254.169.254/latest/meta-data/',
+      secret: 'at-least-16-chars!',
+      events: ['post.published'],
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.webhookSubscription.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a webhook URL resolving to loopback (SSRF)', async () => {
+    const app = authApp(createWebhook as any);
+    const res = await request(app).post('/').send({
+      url: 'https://127.0.0.1/hook',
+      secret: 'at-least-16-chars!',
+      events: ['post.published'],
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.webhookSubscription.create).not.toHaveBeenCalled();
   });
 });
 
