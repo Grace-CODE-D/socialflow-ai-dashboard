@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
 import type { WebhookDelivery, WebhookSubscription } from '../api/models';
+import { WebhooksService as GeneratedWebhooksService } from '../api/services/WebhooksService';
 
 // Event types sourced from src/schemas/webhooks.ts (frontend mirror)
 type WebhookEventType =
@@ -19,80 +20,29 @@ const SUPPORTED_EVENTS: WebhookEventType[] = [
   'system.health_check',
 ];
 
-// ── Frontend-only webhook store ───────────────────────────────────────────────
-// The generated WebhooksService talks to a backend that is not running in this
-// demo. To keep every button functional in frontend-only mode, we back the
-// manager with an in-memory store that mirrors the same async surface.
-
-const uid = (): string =>
-  (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, '');
-
-const store: {
-  webhooks: WebhookSubscription[];
-  deliveries: Record<string, WebhookDelivery[]>;
-} = {
-  webhooks: [
-    {
-      id: uid(),
-      url: 'https://hooks.example.com/socialflow',
-      events: ['post.published', 'post.failed'],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  deliveries: {},
-};
-
-const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-
-function makeDelivery(eventType: WebhookEventType): WebhookDelivery {
-  return {
-    id: uid(),
-    eventType,
-    status: 'success',
-    attempts: 1,
-    responseStatus: 200,
-    createdAt: new Date().toISOString(),
-  };
-}
+// ── Real backend-backed webhook client ────────────────────────────────────────
+// Talks to the generated OpenAPI client (src/api/services/WebhooksService),
+// which is authenticated via configureApi() at app startup (see src/main.tsx).
 
 const WebhooksService = {
   async listWebhooks(): Promise<WebhookSubscription[]> {
-    await delay();
-    return [...store.webhooks];
+    return GeneratedWebhooksService.getWebhooks();
   },
   async createWebhook(input: { url: string; secret: string; events: WebhookEventType[] }): Promise<WebhookSubscription> {
-    await delay();
-    const created: WebhookSubscription = {
-      id: uid(),
-      url: input.url,
-      events: input.events,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-    store.webhooks = [...store.webhooks, created];
-    return created;
+    return GeneratedWebhooksService.postWebhooks({ requestBody: input });
   },
   async deleteWebhook(id: string): Promise<void> {
-    await delay();
-    store.webhooks = store.webhooks.filter((w) => w.id !== id);
-    delete store.deliveries[id];
+    await GeneratedWebhooksService.deleteWebhooks({ id });
   },
   async testWebhook(id: string, input: { eventType: WebhookEventType }): Promise<{ message: string }> {
-    await delay();
-    const delivery = makeDelivery(input.eventType);
-    store.deliveries[id] = [delivery, ...(store.deliveries[id] ?? [])];
-    return { message: `Test "${input.eventType}" delivered (200 OK).` };
+    const result = await GeneratedWebhooksService.postWebhooksTest({ id, requestBody: input });
+    return { message: result?.message ?? `Test "${input.eventType}" sent.` };
   },
   async listDeliveries(id: string): Promise<WebhookDelivery[]> {
-    await delay();
-    return [...(store.deliveries[id] ?? [])];
+    return GeneratedWebhooksService.getWebhooksDeliveries({ id });
   },
-  async replayDelivery(id: string, _deliveryId: string): Promise<void> {
-    await delay();
-    const original = (store.deliveries[id] ?? []).find((d) => d.id === _deliveryId);
-    const replayed = makeDelivery((original?.eventType as WebhookEventType) ?? 'post.published');
-    store.deliveries[id] = [replayed, ...(store.deliveries[id] ?? [])];
+  async replayDelivery(id: string, deliveryId: string): Promise<void> {
+    await GeneratedWebhooksService.postWebhooksDeliveriesReplay({ id, deliveryId });
   },
 };
 
