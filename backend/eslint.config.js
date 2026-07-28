@@ -59,7 +59,16 @@ module.exports = [
     },
   },
   {
+    // Mirrors tsconfig.json's "exclude" — these paths aren't part of the
+    // typed-lint project, so parserOptions.project can't process them.
     files: ['src/**/*.ts'],
+    ignores: [
+      'src/modules/**',
+      'src/shared/**',
+      'src/tests/**',
+      'src/__tests__/database/**',
+      'src/__tests__/integration/**',
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
