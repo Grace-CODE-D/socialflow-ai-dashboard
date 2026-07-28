@@ -4,7 +4,8 @@
  * Event types are sourced from @socialflow/shared (canonical list).
  */
 
-export { SUPPORTED_EVENTS, WebhookEventType } from '@socialflow/shared';
+export { SUPPORTED_EVENTS } from '@socialflow/shared';
+export type { WebhookEventType } from '@socialflow/shared';
 
 /** Base envelope for all webhook events */
 export interface WebhookEvent<T = Record<string, any>> {

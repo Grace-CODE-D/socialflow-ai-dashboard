@@ -29,7 +29,7 @@ const mockSubtle = {
   }),
   encrypt: jest.fn(async (algorithm, key, data) => {
     // Simple mock encryption (just returns the data with a prefix)
-    const prefix = new Uint8Array([0xAA, 0xBB]); // auth tag mock
+    const prefix = new Uint8Array([0xaa, 0xbb]); // auth tag mock
     const result = new Uint8Array(prefix.length + data.byteLength);
     result.set(prefix, 0);
     result.set(new Uint8Array(data), prefix.length);
@@ -42,45 +42,21 @@ const mockSubtle = {
   }),
 };
 
-Object.defineProperty(global, 'window', {
+// jsdom already provides `window` (and `global === window` in this test
+// environment), so mock individual properties on it instead of redefining
+// the whole global, which jsdom marks non-configurable.
+Object.defineProperty(global, 'crypto', {
   value: {
-    crypto: {
-      subtle: mockSubtle,
-      getRandomValues: mockGetRandomValues,
-    },
+    subtle: mockSubtle,
+    getRandomValues: mockGetRandomValues,
   },
   writable: true,
-});
-
-Object.defineProperty(global, 'btoa', {
-  value: (str: string) => Buffer.from(str, 'binary').toString('base64'),
-  writable: true,
-});
-
-Object.defineProperty(global, 'atob', {
-  value: (str: string) => Buffer.from(str, 'base64').toString('binary'),
-  writable: true,
-});
-
-Object.defineProperty(global, 'TextEncoder', {
-  value: class TextEncoder {
-    encode(str: string) {
-      return Buffer.from(str, 'utf8');
-    }
-  },
-  writable: true,
-});
-
-Object.defineProperty(global, 'TextDecoder', {
-  value: class TextDecoder {
-    decode(buffer: ArrayBuffer) {
-      return Buffer.from(buffer).toString('utf8');
-    }
-  },
-  writable: true,
+  configurable: true,
 });
 
 // ── Mock localStorage and sessionStorage ─────────────────────────────────────
+// jsdom provides real implementations, but they don't persist test-to-test
+// the way these in-memory stores do, so override with simple mocks.
 
 const lsStore: Record<string, string> = {};
 const ssStore: Record<string, string> = {};
@@ -88,21 +64,35 @@ const ssStore: Record<string, string> = {};
 Object.defineProperty(global, 'localStorage', {
   value: {
     getItem: (k: string) => lsStore[k] ?? null,
-    setItem: (k: string, v: string) => { lsStore[k] = v; },
-    removeItem: (k: string) => { delete lsStore[k]; },
-    clear: () => { Object.keys(lsStore).forEach(k => delete lsStore[k]); },
+    setItem: (k: string, v: string) => {
+      lsStore[k] = v;
+    },
+    removeItem: (k: string) => {
+      delete lsStore[k];
+    },
+    clear: () => {
+      Object.keys(lsStore).forEach((k) => delete lsStore[k]);
+    },
   },
   writable: true,
+  configurable: true,
 });
 
 Object.defineProperty(global, 'sessionStorage', {
   value: {
     getItem: (k: string) => ssStore[k] ?? null,
-    setItem: (k: string, v: string) => { ssStore[k] = v; },
-    removeItem: (k: string) => { delete ssStore[k]; },
-    clear: () => { Object.keys(ssStore).forEach(k => delete ssStore[k]); },
+    setItem: (k: string, v: string) => {
+      ssStore[k] = v;
+    },
+    removeItem: (k: string) => {
+      delete ssStore[k];
+    },
+    clear: () => {
+      Object.keys(ssStore).forEach((k) => delete ssStore[k]);
+    },
   },
   writable: true,
+  configurable: true,
 });
 
 // ── Import service after mocks ────────────────────────────────────────────────
@@ -116,14 +106,18 @@ import crypto from 'crypto';
 function base32DecodeBytes(encoded: string): Buffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   const clean = encoded.toUpperCase().replace(/=+$/, '');
-  let bits = 0, value = 0;
+  let bits = 0,
+    value = 0;
   const output: number[] = [];
   for (const char of clean) {
     const idx = alphabet.indexOf(char);
     if (idx === -1) continue;
     value = (value << 5) | idx;
     bits += 5;
-    if (bits >= 8) { bits -= 8; output.push((value >> bits) & 0xff); }
+    if (bits >= 8) {
+      bits -= 8;
+      output.push((value >> bits) & 0xff);
+    }
   }
   return Buffer.from(output);
 }
@@ -135,10 +129,12 @@ function generateTotpToken(secret: string, timeStep?: number): string {
   counter.writeBigUInt64BE(BigInt(step));
   const hmac = crypto.createHmac('sha1', key).update(counter).digest();
   const offset = hmac[hmac.length - 1] & 0x0f;
-  const code = ((hmac[offset] & 0x7f) << 24 |
-    hmac[offset + 1] << 16 |
-    hmac[offset + 2] << 8 |
-    hmac[offset + 3]) % 1_000_000;
+  const code =
+    (((hmac[offset] & 0x7f) << 24) |
+      (hmac[offset + 1] << 16) |
+      (hmac[offset + 2] << 8) |
+      hmac[offset + 3]) %
+    1_000_000;
   return code.toString().padStart(6, '0');
 }
 
@@ -158,7 +154,7 @@ beforeEach(() => {
     return bytes.buffer;
   });
   mockSubtle.encrypt.mockImplementation(async (algorithm: any, key: any, data: ArrayBuffer) => {
-    const prefix = new Uint8Array([0xAA, 0xBB]);
+    const prefix = new Uint8Array([0xaa, 0xbb]);
     const result = new Uint8Array(prefix.length + data.byteLength);
     result.set(prefix, 0);
     result.set(new Uint8Array(data), prefix.length);
@@ -177,167 +173,206 @@ beforeEach(() => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe('Property-based tests', () => {
-
   test('Property 1: Generated secrets meet minimum entropy', () => {
     // Feature: totp-two-factor-auth, Property 1: Generated secrets meet minimum entropy
-    fc.assert(fc.property(fc.string(), (label) => {
-      const { secret } = twoFactorService.generateSecret(label);
-      return base32DecodeBytes(secret).length >= 20;
-    }), { numRuns: 100 });
+    fc.assert(
+      fc.property(fc.string(), (label) => {
+        const { secret } = twoFactorService.generateSecret(label);
+        return base32DecodeBytes(secret).length >= 20;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 2: TOTP URI format and issuer', () => {
     // Feature: totp-two-factor-auth, Property 2: TOTP URI format and issuer
-    fc.assert(fc.property(fc.string(), (label) => {
-      const { secret, uri } = twoFactorService.generateSecret(label);
-      const url = new URL(uri);
-      return (
-        uri.startsWith('otpauth://totp/') &&
-        url.searchParams.get('secret') === secret &&
-        url.searchParams.get('issuer') === 'SocialFlow'
-      );
-    }), { numRuns: 100 });
+    fc.assert(
+      fc.property(fc.string(), (label) => {
+        const { secret, uri } = twoFactorService.generateSecret(label);
+        const url = new URL(uri);
+        return (
+          uri.startsWith('otpauth://totp/') &&
+          url.searchParams.get('secret') === secret &&
+          url.searchParams.get('issuer') === 'SocialFlow'
+        );
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 3: URI secret round-trip', () => {
     // Feature: totp-two-factor-auth, Property 3: URI secret round-trip
-    fc.assert(fc.property(fc.string({ minLength: 1 }), (label) => {
-      const { secret, uri } = twoFactorService.generateSecret(label);
-      const extracted = new URL(uri).searchParams.get('secret');
-      return extracted === secret;
-    }), { numRuns: 100 });
+    fc.assert(
+      fc.property(fc.string({ minLength: 1 }), (label) => {
+        const { secret, uri } = twoFactorService.generateSecret(label);
+        const extracted = new URL(uri).searchParams.get('secret');
+        return extracted === secret;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 4: Current TOTP token always verifies', async () => {
     // Feature: totp-two-factor-auth, Property 4: Current TOTP token always verifies
-    await fc.assert(fc.asyncProperty(fc.string(), async (label) => {
-      const { secret } = twoFactorService.generateSecret(label);
-      const token = generateTotpToken(secret);
-      return await twoFactorService.verifyToken(secret, token);
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (label) => {
+        const { secret } = twoFactorService.generateSecret(label);
+        const token = generateTotpToken(secret);
+        return await twoFactorService.verifyToken(secret, token);
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 5: Enable persists 2FA state', async () => {
     // Feature: totp-two-factor-auth, Property 5: Enable persists 2FA state
-    await fc.assert(fc.asyncProperty(fc.string(), async (label) => {
-      localStorage.clear();
-      const { secret } = twoFactorService.generateSecret(label);
-      await twoFactorService.enable(secret);
-      if (!twoFactorService.isEnabled()) return false;
-      const token = generateTotpToken(secret);
-      return await twoFactorService.verifyStoredToken(token);
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (label) => {
+        localStorage.clear();
+        const { secret } = twoFactorService.generateSecret(label);
+        await twoFactorService.enable(secret);
+        if (!twoFactorService.isEnabled()) return false;
+        const token = generateTotpToken(secret);
+        return await twoFactorService.verifyStoredToken(token);
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 6: Recovery code format invariant', () => {
     // Feature: totp-two-factor-auth, Property 6: Recovery code format invariant
-    fc.assert(fc.property(fc.constant(null), () => {
-      const codes = twoFactorService.generateRecoveryCodes();
-      return (
-        codes.length === 8 &&
-        codes.every(c => /^[A-Za-z0-9]{10}$/.test(c))
-      );
-    }), { numRuns: 100 });
+    fc.assert(
+      fc.property(fc.constant(null), () => {
+        const codes = twoFactorService.generateRecoveryCodes();
+        return codes.length === 8 && codes.every((c) => /^[A-Za-z0-9]{10}$/.test(c));
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 7: Recovery codes are not stored in plaintext', async () => {
     // Feature: totp-two-factor-auth, Property 7: Recovery codes are not stored in plaintext
-    await fc.assert(fc.asyncProperty(fc.constant(null), async () => {
-      localStorage.clear();
-      const codes = twoFactorService.generateRecoveryCodes();
-      await twoFactorService.storeRecoveryCodes(codes);
-      const raw = localStorage.getItem('sf_recovery_codes') ?? '';
-      return codes.every(c => !raw.includes(c));
-    }), { numRuns: 5 });
+    await fc.assert(
+      fc.asyncProperty(fc.constant(null), async () => {
+        localStorage.clear();
+        const codes = twoFactorService.generateRecoveryCodes();
+        await twoFactorService.storeRecoveryCodes(codes);
+        const raw = localStorage.getItem('sf_recovery_codes') ?? '';
+        return codes.every((c) => !raw.includes(c));
+      }),
+      { numRuns: 5 },
+    );
   }, 60_000);
 
   test('Property 8: Recovery codes are single-use', async () => {
     // Feature: totp-two-factor-auth, Property 8: Recovery codes are single-use
-    await fc.assert(fc.asyncProperty(fc.constant(null), async () => {
-      localStorage.clear();
-      const codes = twoFactorService.generateRecoveryCodes();
-      await twoFactorService.storeRecoveryCodes(codes);
-      const code = codes[0];
-      const first = await twoFactorService.verifyRecoveryCode(code);
-      const second = await twoFactorService.verifyRecoveryCode(code);
-      return first === true && second === false;
-    }), { numRuns: 5 });
+    await fc.assert(
+      fc.asyncProperty(fc.constant(null), async () => {
+        localStorage.clear();
+        const codes = twoFactorService.generateRecoveryCodes();
+        await twoFactorService.storeRecoveryCodes(codes);
+        const code = codes[0];
+        const first = await twoFactorService.verifyRecoveryCode(code);
+        const second = await twoFactorService.verifyRecoveryCode(code);
+        return first === true && second === false;
+      }),
+      { numRuns: 5 },
+    );
   }, 60_000);
 
   test('Property 9: Regeneration invalidates all prior codes', async () => {
     // Feature: totp-two-factor-auth, Property 9: Regeneration invalidates all prior codes
-    await fc.assert(fc.asyncProperty(fc.constant(null), async () => {
-      localStorage.clear();
-      const oldCodes = twoFactorService.generateRecoveryCodes();
-      await twoFactorService.storeRecoveryCodes(oldCodes);
-      await twoFactorService.regenerateRecoveryCodes();
-      const results = await Promise.all(oldCodes.map(c => twoFactorService.verifyRecoveryCode(c)));
-      return results.every(r => r === false);
-    }), { numRuns: 3 });
+    await fc.assert(
+      fc.asyncProperty(fc.constant(null), async () => {
+        localStorage.clear();
+        const oldCodes = twoFactorService.generateRecoveryCodes();
+        await twoFactorService.storeRecoveryCodes(oldCodes);
+        await twoFactorService.regenerateRecoveryCodes();
+        const results = await Promise.all(
+          oldCodes.map((c) => twoFactorService.verifyRecoveryCode(c)),
+        );
+        return results.every((r) => r === false);
+      }),
+      { numRuns: 3 },
+    );
   }, 120_000);
 
   test('Property 10: Failed attempt counter increments on invalid token', async () => {
     // Feature: totp-two-factor-auth, Property 10: Failed attempt counter increments on invalid token
-    await fc.assert(fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (n) => {
-      twoFactorService.resetFailedAttempts();
-      for (let i = 0; i < n; i++) twoFactorService.recordFailedAttempt();
-      const notLockedYet = !await twoFactorService.isLockedOut();
-      twoFactorService.resetFailedAttempts();
-      return notLockedYet;
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (n) => {
+        twoFactorService.resetFailedAttempts();
+        for (let i = 0; i < n; i++) twoFactorService.recordFailedAttempt();
+        const notLockedYet = !(await twoFactorService.isLockedOut());
+        twoFactorService.resetFailedAttempts();
+        return notLockedYet;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 11: Lockout activates after 5 failures', async () => {
     // Feature: totp-two-factor-auth, Property 11: Lockout activates after 5 failures
-    await fc.assert(fc.asyncProperty(fc.constant(null), async () => {
-      twoFactorService.resetFailedAttempts();
-      for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
-      const locked = await twoFactorService.isLockedOut();
-      const remaining = await twoFactorService.getLockoutRemainingMs();
-      twoFactorService.resetFailedAttempts();
-      return locked && remaining > 290_000 && remaining <= 300_000;
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.constant(null), async () => {
+        twoFactorService.resetFailedAttempts();
+        for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
+        const locked = await twoFactorService.isLockedOut();
+        const remaining = await twoFactorService.getLockoutRemainingMs();
+        twoFactorService.resetFailedAttempts();
+        return locked && remaining > 290_000 && remaining <= 300_000;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 12: Replay attack prevention', async () => {
     // Feature: totp-two-factor-auth, Property 12: Replay attack prevention
-    await fc.assert(fc.asyncProperty(fc.string(), async (label) => {
-      localStorage.clear();
-      const { secret } = twoFactorService.generateSecret(label);
-      await twoFactorService.enable(secret);
-      const token = generateTotpToken(secret);
-      const first = await twoFactorService.verifyStoredToken(token);
-      const second = await twoFactorService.verifyStoredToken(token);
-      return first === true && second === false;
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (label) => {
+        localStorage.clear();
+        const { secret } = twoFactorService.generateSecret(label);
+        await twoFactorService.enable(secret);
+        const token = generateTotpToken(secret);
+        const first = await twoFactorService.verifyStoredToken(token);
+        const second = await twoFactorService.verifyStoredToken(token);
+        return first === true && second === false;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 13: Disable clears all 2FA state', async () => {
     // Feature: totp-two-factor-auth, Property 13: Disable clears all 2FA state
-    await fc.assert(fc.asyncProperty(fc.string(), async (label) => {
-      localStorage.clear();
-      const { secret } = twoFactorService.generateSecret(label);
-      await twoFactorService.enable(secret);
-      const codes = twoFactorService.generateRecoveryCodes();
-      await twoFactorService.storeRecoveryCodes(codes);
-      await twoFactorService.disable();
-      if (twoFactorService.isEnabled()) return false;
-      const recoveryValid = await twoFactorService.verifyRecoveryCode(codes[0]);
-      return !recoveryValid;
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (label) => {
+        localStorage.clear();
+        const { secret } = twoFactorService.generateSecret(label);
+        await twoFactorService.enable(secret);
+        const codes = twoFactorService.generateRecoveryCodes();
+        await twoFactorService.storeRecoveryCodes(codes);
+        await twoFactorService.disable();
+        if (twoFactorService.isEnabled()) return false;
+        const recoveryValid = await twoFactorService.verifyRecoveryCode(codes[0]);
+        return !recoveryValid;
+      }),
+      { numRuns: 100 },
+    );
   });
 
   test('Property 14: Secret and key are not stored in plaintext', async () => {
     // Feature: totp-two-factor-auth, Property 14: Secret and key are not stored in plaintext
-    await fc.assert(fc.asyncProperty(fc.string(), async (label) => {
-      localStorage.clear();
-      const { secret } = twoFactorService.generateSecret(label);
-      await twoFactorService.enable(secret);
-      const raw = localStorage.getItem('sf_user_2fa') ?? '';
-      return !raw.includes(secret);
-    }), { numRuns: 100 });
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (label) => {
+        localStorage.clear();
+        const { secret } = twoFactorService.generateSecret(label);
+        await twoFactorService.enable(secret);
+        const raw = localStorage.getItem('sf_user_2fa') ?? '';
+        return !raw.includes(secret);
+      }),
+      { numRuns: 100 },
+    );
   });
-
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -345,7 +380,6 @@ describe('Property-based tests', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe('Unit tests', () => {
-
   test('generateSecret returns valid otpauth URI with SocialFlow issuer', () => {
     const { secret, uri } = twoFactorService.generateSecret('user@example.com');
     expect(uri).toMatch(/^otpauth:\/\/totp\//);
@@ -379,7 +413,7 @@ describe('Unit tests', () => {
   test('generateRecoveryCodes returns exactly 8 codes of 10 alphanumeric chars', () => {
     const codes = twoFactorService.generateRecoveryCodes();
     expect(codes).toHaveLength(8);
-    codes.forEach(c => expect(c).toMatch(/^[A-Za-z0-9]{10}$/));
+    codes.forEach((c) => expect(c).toMatch(/^[A-Za-z0-9]{10}$/));
   });
 
   test('getRemainingRecoveryCodeCount returns 8 after storing fresh codes', async () => {
@@ -447,7 +481,6 @@ describe('Unit tests', () => {
       expect(raw).not.toContain(code);
     }
   });
-
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -455,7 +488,6 @@ describe('Unit tests', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe('Pluggable lockout store (#1247)', () => {
-
   afterEach(() => {
     // Reset pluggable store after each test in this suite
     twoFactorService._lockoutStore = null;
@@ -570,5 +602,4 @@ describe('Pluggable lockout store (#1247)', () => {
 
     expect(mockStore.resetFailedAttempts).toHaveBeenCalledWith('user-xyz');
   });
-
 });

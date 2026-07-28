@@ -29,13 +29,12 @@ const mockSvc = twoFactorService as jest.Mocked<typeof twoFactorService>;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockSvc.isLockedOut.mockReturnValue(false);
-  mockSvc.getLockoutRemainingMs.mockReturnValue(0);
+  mockSvc.isLockedOut.mockResolvedValue(false);
+  mockSvc.getLockoutRemainingMs.mockResolvedValue(0);
   mockSvc.getRemainingRecoveryCodeCount.mockResolvedValue(8);
 });
 
 describe('TwoFactorLogin', () => {
-
   test('renders TOTP input by default', () => {
     render(<TwoFactorLogin onSuccess={jest.fn()} />);
     expect(screen.getByPlaceholderText('6-digit code')).toBeInTheDocument();
@@ -57,15 +56,17 @@ describe('TwoFactorLogin', () => {
     render(<TwoFactorLogin onSuccess={jest.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '000000' } });
     fireEvent.click(screen.getByText('Verify'));
-    await waitFor(() => expect(screen.getByText('Invalid code. Please try again.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Invalid code. Please try again.')).toBeInTheDocument(),
+    );
     expect(mockSvc.recordFailedAttempt).toHaveBeenCalled();
   });
 
   test('shows lockout message after 5 failures', async () => {
     mockSvc.verifyStoredToken.mockResolvedValue(false);
     mockSvc.recordFailedAttempt.mockImplementation(() => {
-      mockSvc.isLockedOut.mockReturnValue(true);
-      mockSvc.getLockoutRemainingMs.mockReturnValue(300_000);
+      mockSvc.isLockedOut.mockResolvedValue(true);
+      mockSvc.getLockoutRemainingMs.mockResolvedValue(300_000);
     });
     render(<TwoFactorLogin onSuccess={jest.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '000000' } });
@@ -73,11 +74,11 @@ describe('TwoFactorLogin', () => {
     await waitFor(() => expect(screen.getByText(/Too many failed attempts/)).toBeInTheDocument());
   });
 
-  test('disables input when locked out', () => {
-    mockSvc.isLockedOut.mockReturnValue(true);
-    mockSvc.getLockoutRemainingMs.mockReturnValue(300_000);
+  test('disables input when locked out', async () => {
+    mockSvc.isLockedOut.mockResolvedValue(true);
+    mockSvc.getLockoutRemainingMs.mockResolvedValue(300_000);
     render(<TwoFactorLogin onSuccess={jest.fn()} />);
-    expect(screen.getByPlaceholderText('6-digit code')).toBeDisabled();
+    await waitFor(() => expect(screen.getByPlaceholderText('6-digit code')).toBeDisabled());
     expect(screen.getByText(/Input locked/)).toBeInTheDocument();
   });
 
@@ -93,7 +94,9 @@ describe('TwoFactorLogin', () => {
     const onSuccess = jest.fn();
     render(<TwoFactorLogin onSuccess={onSuccess} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
-    fireEvent.change(screen.getByPlaceholderText('Recovery code'), { target: { value: 'ABCDE12345' } });
+    fireEvent.change(screen.getByPlaceholderText('Recovery code'), {
+      target: { value: 'ABCDE12345' },
+    });
     fireEvent.click(screen.getByText('Verify'));
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
   });
@@ -103,11 +106,11 @@ describe('TwoFactorLogin', () => {
     mockSvc.getRemainingRecoveryCodeCount.mockResolvedValue(0);
     render(<TwoFactorLogin onSuccess={jest.fn()} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
-    fireEvent.change(screen.getByPlaceholderText('Recovery code'), { target: { value: 'XXXXXXXXXX' } });
+    fireEvent.change(screen.getByPlaceholderText('Recovery code'), {
+      target: { value: 'XXXXXXXXXX' },
+    });
     fireEvent.click(screen.getByText('Verify'));
-    await waitFor(() =>
-      expect(screen.getByText(/All recovery codes used/)).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText(/All recovery codes used/)).toBeInTheDocument());
   });
 
   test('switches back to TOTP mode from recovery mode', () => {
@@ -116,5 +119,4 @@ describe('TwoFactorLogin', () => {
     fireEvent.click(screen.getByText('Use authenticator app'));
     expect(screen.getByPlaceholderText('6-digit code')).toBeInTheDocument();
   });
-
 });
