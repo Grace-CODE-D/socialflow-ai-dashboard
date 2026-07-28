@@ -4,6 +4,8 @@ import { Sidebar } from './Sidebar';
 import { NotificationsPanel } from './NotificationsPanel';
 import { useComposer } from '../../contexts/ComposerContext';
 import { useAuth } from '../../contexts/AuthContext';
+import JobProgressPanel from '../JobProgressPanel';
+import { useJobStream } from '../../hooks/useJobStream';
 
 interface PageMeta {
   title: string;
@@ -14,6 +16,7 @@ const PAGE_META: Record<string, PageMeta> = {
   '/': { title: 'Welcome Back', subtitle: 'Your AI agents summarized 4,502 social signals today.' },
   '/analytics': { title: 'Analytics', subtitle: 'Cross-platform performance across the last 28 days.' },
   '/scheduler': { title: 'Scheduler', subtitle: 'Plan, queue, and publish across every channel.' },
+  '/compose': { title: 'Create Post', subtitle: 'Compose and schedule with AI-powered reach analysis.' },
   '/predictor': { title: 'AI Predictor', subtitle: 'Forecast reach before you hit publish.' },
   '/settings': { title: 'Settings', subtitle: 'Manage your profile, security, and integrations.' },
 };
@@ -22,6 +25,8 @@ export const DashboardLayout: React.FC = () => {
   const location = useLocation();
   const { openComposer } = useComposer();
   const { user } = useAuth();
+  // null token = not authenticated; JobProgressPanel silently renders nothing when empty
+  const { jobs, clearJob, retryJob } = useJobStream(null);
 
   const meta = PAGE_META[location.pathname] ?? { title: 'Dashboard', subtitle: '' };
   const firstName = (user?.name ?? 'Alex').split(' ')[0];
@@ -56,6 +61,9 @@ export const DashboardLayout: React.FC = () => {
           <Outlet />
         </section>
       </main>
+
+      {/* Global job progress overlay — visible on all pages */}
+      <JobProgressPanel jobs={jobs} onDismiss={clearJob} onRetry={retryJob} />
     </div>
   );
 };

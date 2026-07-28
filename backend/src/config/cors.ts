@@ -21,7 +21,14 @@ const ALLOWED_ORIGINS: Record<string, string[]> = {
 // actual NODE_ENV of 'development'/'test'/'production', so production
 // silently fell back to the localhost allowlist.
 const env = process.env.NODE_ENV ?? 'development';
-const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.development;
+
+/**
+ * Flattened list of origins allowed for the current environment. Exported so
+ * other places that need to validate an application-controlled origin
+ * (e.g. Stripe Checkout success/cancel URLs) can reuse the same allow-list
+ * instead of accepting arbitrary attacker-supplied domains.
+ */
+export const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.development;
 
 export const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
