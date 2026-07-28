@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { translationService } from '../services/TranslationService';
 import { useTranslation } from '../hooks/useTranslation';
-import { SupportedLanguage } from '@socialflow/shared';
+import { SupportedLanguage, TranslationProvider } from '@socialflow/shared';
 
 const MaterialIcon = ({ name, className }: { name: string; className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -10,11 +10,15 @@ const MaterialIcon = ({ name, className }: { name: string; className?: string })
 export const TranslationPanel: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['es', 'fr']);
+  const [providers, setProviders] = useState<TranslationProvider[]>([]);
   const { result, loading, translate } = useTranslation();
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const languages = translationService.getSupportedLanguages();
-  const providers = translationService.getAvailableProviders();
+
+  useEffect(() => {
+    translationService.getAvailableProviders().then(setProviders);
+  }, []);
 
   /**
    * Debounced translate function - waits 400ms after user stops typing

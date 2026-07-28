@@ -11,14 +11,15 @@ import { Permission, RoleStore } from '../models/Role';
  *   router.get('/admin', authMiddleware, checkPermission('users:manage', 'roles:manage'), handler)
  */
 export function checkPermission(...required: Permission[]) {
-  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.user?.id;
     if (!userId) {
       res.status(401).json({ message: 'Unauthorized' });
       return;
     }
 
-    const missing = required.filter((p) => !RoleStore.hasPermission(userId, p));
+    const granted = await Promise.all(required.map((p) => RoleStore.hasPermission(userId, p)));
+    const missing = required.filter((_, i) => !granted[i]);
     if (missing.length > 0) {
       res.status(403).json({ message: 'Forbidden', missing });
       return;

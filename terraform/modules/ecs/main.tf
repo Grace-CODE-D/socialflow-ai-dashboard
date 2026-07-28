@@ -71,7 +71,15 @@ resource "aws_ecs_task_definition" "app" {
       { name = "REDIS_TLS",   value = "true" }
     ]
     secrets = [
-      { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.database_url.arn },
+      # DB connection is injected as discrete fields rather than one
+      # pre-assembled DATABASE_URL so the password never lands in Terraform
+      # state as part of a single combined attribute value — the app builds
+      # the connection string itself at runtime (see backend/src/config/config.ts).
+      { name = "DB_HOST",      valueFrom = aws_ssm_parameter.db_host.arn },
+      { name = "DB_PORT",      valueFrom = aws_ssm_parameter.db_port.arn },
+      { name = "DB_NAME",      valueFrom = aws_ssm_parameter.db_name.arn },
+      { name = "DB_USER",      valueFrom = aws_ssm_parameter.db_user.arn },
+      { name = "DB_PASSWORD",  valueFrom = aws_ssm_parameter.db_password.arn },
       { name = "REDIS_URL",    valueFrom = aws_ssm_parameter.redis_url.arn },
       { name = "JWT_SECRET",   valueFrom = aws_ssm_parameter.jwt_secret.arn }
     ]
@@ -93,10 +101,37 @@ resource "aws_ecs_task_definition" "app" {
   }])
 }
 
-resource "aws_ssm_parameter" "database_url" {
-  name  = "/socialflow/${var.env}/DATABASE_URL"
+resource "aws_ssm_parameter" "db_host" {
+  name  = "/socialflow/${var.env}/DB_HOST"
+  type  = "String"
+  value = var.db_host
+}
+
+resource "aws_ssm_parameter" "db_port" {
+  name  = "/socialflow/${var.env}/DB_PORT"
+  type  = "String"
+  value = tostring(var.db_port)
+}
+
+resource "aws_ssm_parameter" "db_name" {
+  name  = "/socialflow/${var.env}/DB_NAME"
+  type  = "String"
+  value = var.db_name
+}
+
+resource "aws_ssm_parameter" "db_user" {
+  name  = "/socialflow/${var.env}/DB_USER"
+  type  = "String"
+  value = var.db_username
+}
+
+# The password is stored on its own, never concatenated into a connection
+# string with the host/user/db name — keeps a single Terraform-tracked
+# attribute from ever holding the whole secret.
+resource "aws_ssm_parameter" "db_password" {
+  name  = "/socialflow/${var.env}/DB_PASSWORD"
   type  = "SecureString"
-  value = var.database_url
+  value = var.db_password
 }
 
 resource "aws_ssm_parameter" "redis_url" {
@@ -137,27 +172,6 @@ resource "aws_security_group" "alb" {
   }
 
   tags = { Name = "socialflow-${var.env}-alb-sg" }
-}
-
-resource "aws_security_group" "app" {
-  name   = "socialflow-${var.env}-app-sg"
-  vpc_id = var.vpc_id
-
-  ingress {
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "socialflow-${var.env}-app-sg" }
 }
 
 resource "aws_lb" "main" {
@@ -204,7 +218,7 @@ resource "aws_ecs_service" "app" {
 
   network_configuration {
     subnets         = var.private_subnet_ids
-    security_groups = [aws_security_group.app.id]
+    security_groups = [var.app_sg_id]
   }
 
   load_balancer {

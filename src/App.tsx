@@ -7,6 +7,7 @@ import { SchedulerPage } from './pages/SchedulerPage';
 import { PredictorPage } from './pages/PredictorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
+import { CreatePostWithReachAnalysis } from './components/CreatePostWithReachAnalysis';
 import { ComposerProvider } from './contexts/ComposerContext';
 import { PostsProvider } from './contexts/PostsContext';
 import { useAuth } from './contexts/AuthContext';
@@ -26,6 +27,7 @@ function App() {
             <Route path="/" element={<PredictiveReachDashboard />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/scheduler" element={<SchedulerPage />} />
+            <Route path="/compose" element={<CreatePostWithReachAnalysis onNavigate={() => {}} />} />
             <Route path="/predictor" element={<PredictorPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

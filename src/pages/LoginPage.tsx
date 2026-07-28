@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { twoFactorService } from '../services/twoFactorService';
+import TwoFactorLogin from '../components/TwoFactorLogin';
 
 const MaterialIcon = ({ name, className }: { name: string; className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -12,6 +14,19 @@ export const LoginPage: React.FC = () => {
   const { toast } = useToast();
   const [email, setEmail] = useState('alex@socialflow.ai');
   const [password, setPassword] = useState('demo1234');
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+
+  // If 2FA is enabled, show the 2FA prompt after credentials are submitted
+  if (pendingEmail !== null) {
+    return (
+      <TwoFactorLogin
+        onSuccess={() => {
+          login(pendingEmail);
+          toast('Welcome back to SocialFlow AI.', 'success');
+        }}
+      />
+    );
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +34,13 @@ export const LoginPage: React.FC = () => {
       toast('Enter your email to continue.', 'error');
       return;
     }
-    login(email.trim());
-    toast('Welcome back to SocialFlow AI.', 'success');
+    if (twoFactorService.isEnabled()) {
+      // Park the email and show the 2FA screen before completing login
+      setPendingEmail(email.trim());
+    } else {
+      login(email.trim());
+      toast('Welcome back to SocialFlow AI.', 'success');
+    }
   };
 
   return (
