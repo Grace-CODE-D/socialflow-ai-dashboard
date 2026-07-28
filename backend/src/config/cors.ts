@@ -14,7 +14,14 @@ const ALLOWED_ORIGINS: Record<string, string[]> = {
 };
 
 const env = process.env.NODE_ENV ?? 'local';
-const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.local;
+
+/**
+ * Flattened list of origins allowed for the current environment. Exported so
+ * other places that need to validate an application-controlled origin
+ * (e.g. Stripe Checkout success/cancel URLs) can reuse the same allow-list
+ * instead of accepting arbitrary attacker-supplied domains.
+ */
+export const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.local;
 
 export const corsOptions: CorsOptions = {
   origin: (origin, callback) => {

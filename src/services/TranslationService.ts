@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { traceAiCall } from '../instrumentation';
 import {
   TranslationRequest,
   TranslationResult,
@@ -271,10 +272,12 @@ Text to translate: "${text}"
 
 Translation:`;
 
-    const result = await this.genAI.models.generateContent({
-      model: this.model,
-      contents: prompt,
-    });
+    const result = await traceAiCall('gemini.generateContent', this.model, () =>
+      this.genAI!.models.generateContent({
+        model: this.model,
+        contents: prompt,
+      }),
+    );
     return (result.text ?? '').trim();
   }
 
