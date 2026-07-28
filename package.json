@@ -60,7 +60,7 @@
     "dexie": "^4.3.0",
     "fast-check": "^4.6.0",
     "framer-motion": "^12.38.0",
-    "lucide-react": "^0.300.0",
+    "lucide-react": "^1.27.0",
     "nodemailer": "^9.0.3",
     "otplib": "^13.4.0",
     "papaparse": "^5.5.3",
