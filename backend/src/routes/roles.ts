@@ -117,7 +117,7 @@ router.post(
     (req) => (req.body as { userId?: string })?.userId,
     (req) => ({ role: (req.body as { role?: string })?.role }),
   ),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { userId, role } = req.body as { userId: string; role: RoleName };
     if (!(await UserStore.findById(userId))) {
       return res.status(404).json({ message: 'User not found' });
@@ -152,7 +152,7 @@ router.delete(
   authMiddleware,
   checkPermission('roles:manage'),
   audit('role:revoke', 'user', (req) => req.params.userId),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { userId } = req.params;
     if (!(await RoleStore.getRoleName(userId))) {
       return res.status(404).json({ message: 'No role assignment found for this user' });

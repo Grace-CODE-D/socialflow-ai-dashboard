@@ -22,8 +22,8 @@ jest.mock('../../lib/prisma', () => ({
 jest.mock('../../services/AuthBlacklistService', () => ({
   AuthBlacklistService: {
     isBlacklisted: jest.fn().mockResolvedValue(false),
-    keyFromPayload: jest.fn((p: { sub?: string; jti?: string; iat?: number }) =>
-      p.jti ?? `${p.sub}:${p.iat}`,
+    keyFromPayload: jest.fn(
+      (p: { sub?: string; jti?: string; iat?: number }) => p.jti ?? `${p.sub}:${p.iat}`,
     ),
   },
 }));
@@ -37,12 +37,14 @@ describe('createApolloServer', () => {
   });
 
   it('constructs an ApolloServer instance wired with the schema and resolvers', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createApolloServer } = require('../index');
     const server = createApolloServer();
     expect(server).toBeInstanceOf(ApolloServer);
   });
 
   it('starts successfully, proving the schema builds without error', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createApolloServer } = require('../index');
     const server = createApolloServer();
     await expect(server.start()).resolves.toBeUndefined();
@@ -52,6 +54,7 @@ describe('createApolloServer', () => {
   it('constructs without throwing outside production (introspection enabled)', () => {
     process.env.NODE_ENV = 'development';
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createApolloServer } = require('../index');
     expect(() => createApolloServer()).not.toThrow();
   });
@@ -59,6 +62,7 @@ describe('createApolloServer', () => {
   it('constructs without throwing in production (introspection disabled)', () => {
     process.env.NODE_ENV = 'production';
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createApolloServer } = require('../index');
     expect(() => createApolloServer()).not.toThrow();
   });

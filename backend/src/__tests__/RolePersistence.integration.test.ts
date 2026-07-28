@@ -47,11 +47,13 @@ describe('RoleStore persistence (#1297)', () => {
 
   it('a role assigned via one RoleStore instance is visible from a second, independent RoleStore instance', async () => {
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: replicaA } = require('../models/Role');
     await replicaA.assign('user-1', 'admin');
 
     // Fresh module graph — stands in for a request handled by a different pod.
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: replicaB } = require('../models/Role');
 
     expect(await replicaB.getRoleName('user-1')).toBe('admin');
@@ -60,12 +62,14 @@ describe('RoleStore persistence (#1297)', () => {
 
   it('survives a process restart — a reassignment persists after the module is reloaded', async () => {
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: before } = require('../models/Role');
     await before.assign('user-2', 'editor');
 
     // Simulate a restart: the in-memory module state is gone, only the
     // durable store (fakeTable) remains.
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: after } = require('../models/Role');
 
     expect(await after.getRoleName('user-2')).toBe('editor');
@@ -76,21 +80,26 @@ describe('RoleStore persistence (#1297)', () => {
 
   it('reassigning a role overwrites the previous one for that user, everywhere', async () => {
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: replicaA } = require('../models/Role');
     await replicaA.assign('user-3', 'viewer');
 
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: replicaB } = require('../models/Role');
     await replicaB.assign('user-3', 'admin');
 
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore: replicaC } = require('../models/Role');
     expect(await replicaC.getRoleName('user-3')).toBe('admin');
   });
 
   it('checkPermission enforces the same permission matrix once backed by the database', async () => {
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore } = require('../models/Role');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { checkPermission } = require('../middleware/checkPermission');
 
     await RoleStore.assign('user-viewer', 'viewer');
@@ -120,6 +129,7 @@ describe('RoleStore persistence (#1297)', () => {
 
   it('an unassigned user has no role and no permissions', async () => {
     jest.resetModules();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RoleStore } = require('../models/Role');
 
     expect(await RoleStore.getRole('ghost-user')).toBeUndefined();

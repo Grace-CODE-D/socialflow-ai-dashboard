@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
-import { AuthRequest } from '../middleware/authMiddleware';
+import { AuthRequest } from '../middleware/authenticate';
 import { ModerationService } from '../services/ModerationService';
 import { BadRequestError, NotFoundError } from '../lib/errors';
 import { indexPost, deletePost as deleteSearchPost } from '../services/SearchService';
