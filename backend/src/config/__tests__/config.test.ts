@@ -4,6 +4,7 @@ const REQUIRED_ENV: Record<string, string> = {
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
   JWT_SECRET: 'super-secret-jwt-value-at-least-32-chars',
   JWT_REFRESH_SECRET: 'super-secret-refresh-value-at-least-32-chars',
+  CSRF_SECRET: 'super-secret-csrf-value-at-least-32-chars',
   TWITTER_API_KEY: 'twitter-key',
   TWITTER_API_SECRET: 'twitter-secret',
   STRIPE_SECRET_KEY: 'sk_test_required',
@@ -221,6 +222,17 @@ describe('validateEnv', () => {
     it('throws when JWT_REFRESH_SECRET is shorter than 32 characters', () => {
       expect(() => validateEnv({ ...REQUIRED_ENV, JWT_REFRESH_SECRET: 'short-secret' })).toThrow(
         'JWT_REFRESH_SECRET must be at least 32 characters',
+      );
+    });
+
+    it('throws when CSRF_SECRET is missing', () => {
+      const { CSRF_SECRET: _, ...env } = REQUIRED_ENV;
+      expect(() => validateEnv(env)).toThrow('Environment validation failed');
+    });
+
+    it('throws when CSRF_SECRET is shorter than 32 characters', () => {
+      expect(() => validateEnv({ ...REQUIRED_ENV, CSRF_SECRET: 'short-secret' })).toThrow(
+        'CSRF_SECRET must be at least 32 characters',
       );
     });
 

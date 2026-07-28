@@ -1,6 +1,7 @@
 import { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthBlacklistService } from '../services/AuthBlacklistService';
+import { config } from '../config/config';
 
 export interface GraphQLContext {
   /** Authenticated user ID, or undefined for unauthenticated requests. */
@@ -13,8 +14,6 @@ export interface GraphQLContext {
    */
   tokenKey?: string;
 }
-
-const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 
 /**
  * Build the per-request GraphQL context.
@@ -31,7 +30,7 @@ export async function buildContext({ req }: { req: Request }): Promise<GraphQLCo
   const token = authHeader.slice(7);
   let payload: jwt.JwtPayload;
   try {
-    payload = jwt.verify(token, JWT_SECRET()) as jwt.JwtPayload;
+    payload = jwt.verify(token, config.JWT_SECRET) as jwt.JwtPayload;
   } catch {
     return {};
   }
