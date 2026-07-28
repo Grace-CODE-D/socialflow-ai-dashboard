@@ -78,6 +78,36 @@ test('reconnects with backoff and resumes from last event id', () => {
   expect(MockEventSource.instances[1].url).toContain('lastEventId=evt-1');
 });
 
+test('reverts optimistic pending state and surfaces an error on a failed retry response', async () => {
+  const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500 } as Response);
+  (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+  const { result } = renderHook(() => useJobStream('token'));
+
+  act(() => {
+    MockEventSource.instances[0].emit('job_progress', {
+      jobId: 'job3',
+      userId: 'user1',
+      type: 'ai_generation',
+      status: 'failed',
+      progress: 20,
+      error: 'boom',
+    });
+  });
+
+  await act(async () => {
+    await result.current.retryJob('job3');
+  });
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    expect.stringContaining('/api/v1/jobs/job3/retry'),
+    expect.objectContaining({ method: 'POST' }),
+  );
+  expect(result.current.jobs.job3.status).toBe('failed');
+  expect(result.current.jobs.job3.progress).toBe(20);
+  expect(result.current.retryError).toMatch(/500/);
+});
+
 test('stops reconnecting after maxRetries', () => {
   const { result } = renderHook(() => useJobStream('token', { maxRetries: 2 }));
 

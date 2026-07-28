@@ -42,6 +42,7 @@ export function useJobStream(token: string | null, options: UseJobStreamOptions 
   const [jobs, setJobs] = useState<JobState>({});
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelay = useRef(INITIAL_RETRY_DELAY_MS);
@@ -152,17 +153,36 @@ export function useJobStream(token: string | null, options: UseJobStreamOptions 
   const retryJob = useCallback(
     async (jobId: string): Promise<void> => {
       if (!token) return;
+      const previousJob = jobs[jobId];
+      setRetryError(null);
       setJobs((prev: JobState) => {
         if (!prev[jobId]) return prev;
         return { ...prev, [jobId]: { ...prev[jobId], status: 'pending', progress: 0, error: undefined } };
       });
-      await fetch(`${baseUrl}/api/v1/jobs/${encodeURIComponent(jobId)}/retry`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/api/v1/jobs/${encodeURIComponent(jobId)}/retry`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (err) {
+        setJobs((prev: JobState) => (previousJob ? { ...prev, [jobId]: previousJob } : prev));
+        setRetryError(err instanceof Error ? err.message : 'Failed to retry job');
+        return;
+      }
+
+      if (!response.ok) {
+        setJobs((prev: JobState) => (previousJob ? { ...prev, [jobId]: previousJob } : prev));
+        const message = `Retry failed with status ${response.status}`;
+        setRetryError(message);
+        if (previousJob) {
+          onJobFailed?.(previousJob);
+        }
+      }
     },
-    [token, baseUrl],
+    [token, baseUrl, jobs, onJobFailed],
   );
 
-  return { jobs, connected, error, clearJob, retryJob };
+  return { jobs, connected, error, retryError, clearJob, retryJob };
 }
