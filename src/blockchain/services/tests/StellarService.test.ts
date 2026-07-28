@@ -50,7 +50,10 @@ jest.mock('../OfflineQueue', () => ({
 }));
 
 import { StellarService } from '../StellarService';
-import { DEFAULT_NETWORK } from '../../config/networks';
+import { DEFAULT_NETWORK, NETWORKS } from '../../config/networks';
+import StellarSdk from '@stellar/stellar-sdk';
+
+const MockServer = (StellarSdk as any).Server as jest.Mock;
 
 describe('StellarService', () => {
   let service: StellarService;
@@ -180,6 +183,46 @@ describe('StellarService', () => {
       const mockTx = { toXDR: jest.fn().mockReturnValue('base64-xdr') } as any;
       const id = await service.queueForOffline(mockTx);
       expect(typeof id).toBe('string');
+    });
+  });
+
+  describe('Horizon fallback pool', () => {
+    it('only includes fallback URLs for the configured network', () => {
+      MockServer.mockClear();
+      new StellarService(NETWORKS.TESTNET);
+      const urlsUsed = MockServer.mock.calls.map((call) => call[0]);
+      expect(urlsUsed).toContain(NETWORKS.TESTNET.horizonUrl);
+      expect(urlsUsed).not.toContain(NETWORKS.MAINNET.horizonUrl);
+      expect(urlsUsed).not.toContain(NETWORKS.FUTURENET.horizonUrl);
+    });
+
+    it('does not rotate to a fallback server on successful calls', async () => {
+      const customConfig = {
+        horizonUrl: 'https://custom-horizon.example.com',
+        networkPassphrase: NETWORKS.MAINNET.networkPassphrase,
+        name: 'Custom Mainnet',
+      };
+      const svc = new StellarService(customConfig);
+      expect((svc as any).pool.length).toBe(2);
+      mockRoot.mockResolvedValue({ core_version: '1.0.0' });
+      await svc.getNetworkStatus();
+      await svc.getNetworkStatus();
+      expect((svc as any).currentServerIndex).toBe(0);
+    });
+
+    it('advances to the next server only after a failure', async () => {
+      const customConfig = {
+        horizonUrl: 'https://custom-horizon.example.com',
+        networkPassphrase: NETWORKS.MAINNET.networkPassphrase,
+        name: 'Custom Mainnet',
+      };
+      const svc = new StellarService(customConfig);
+      mockRoot
+        .mockRejectedValueOnce(new Error('down'))
+        .mockResolvedValueOnce({ core_version: '1.0.0' });
+      const status = await svc.getNetworkStatus();
+      expect(status).toBe(true);
+      expect((svc as any).currentServerIndex).toBe(1);
     });
   });
 
