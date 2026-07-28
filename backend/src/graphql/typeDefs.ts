@@ -78,4 +78,11 @@ export const typeDefs = parse(`
     """Delete a post. Returns true on success."""
     deletePost(id: ID!): Boolean!
   }
+
+  # ── Subscriptions ──────────────────────────────────────────────────────────
+
+  type Subscription {
+    """Subscribe to org-level update events. Requires membership in the org."""
+    orgUpdate(orgId: ID!): Post!
+  }
 `);
