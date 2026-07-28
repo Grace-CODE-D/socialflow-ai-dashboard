@@ -1,9 +1,13 @@
 import { Router } from 'express';
-import { handleCreatePost, handleSchedulePost } from './controller';
+import { authenticate } from '../../middleware/authenticate';
+import { validate } from '../../middleware/validate';
+import { createPost } from '../../controllers/PostController';
+import { createPostSchema } from './schema';
 
 const router = Router();
 
-router.post('/', handleCreatePost);
-router.patch('/:id/schedule', handleSchedulePost);
+router.use(authenticate);
+
+router.post('/', validate(createPostSchema), createPost);
 
 export default router;

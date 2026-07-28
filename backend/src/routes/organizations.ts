@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate as authMiddleware } from '../middleware/authenticate';
+import { audit } from '../middleware/audit';
 import {
   createOrganization,
   listOrganizations,
@@ -126,7 +127,16 @@ router.get('/:orgId', getOrganization);
  *       404:
  *         description: Organization or user not found
  */
-router.post('/:orgId/members', addMember);
+router.post(
+  '/:orgId/members',
+  audit(
+    'org:member:invite',
+    'organization-member',
+    (req) => req.body?.userId,
+    (req) => ({ orgId: req.params.orgId, role: req.body?.role }),
+  ),
+  addMember,
+);
 
 /**
  * @openapi
@@ -152,6 +162,15 @@ router.post('/:orgId/members', addMember);
  *       404:
  *         description: Not found
  */
-router.delete('/:orgId/members/:userId', removeMember);
+router.delete(
+  '/:orgId/members/:userId',
+  audit(
+    'org:member:remove',
+    'organization-member',
+    (req) => req.params.userId,
+    (req) => ({ orgId: req.params.orgId }),
+  ),
+  removeMember,
+);
 
 export default router;

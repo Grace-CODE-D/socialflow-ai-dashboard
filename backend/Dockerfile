@@ -12,11 +12,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Compile TypeScript — skipLibCheck tolerates pre-existing third-party type
-# issues; noEmitOnError=false ensures output is produced despite them
+# Compile TypeScript — type errors must fail the build. tsc --noEmit runs
+# first as a strict, failing typecheck gate; the real emit only runs (and is
+# trusted) once that gate passes.
 COPY tsconfig.json ./
 COPY src ./src
-RUN node_modules/.bin/tsc --skipLibCheck 2>/dev/null || true && \
+RUN node_modules/.bin/tsc --noEmit --skipLibCheck
+RUN node_modules/.bin/tsc --skipLibCheck && \
     test -d dist && echo "Build succeeded" || (echo "Build failed: dist/ not created" && exit 1)
 
 # ── Stage 2: production image ─────────────────────────────────────────────────

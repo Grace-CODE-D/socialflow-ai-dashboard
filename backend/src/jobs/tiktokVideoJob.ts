@@ -103,7 +103,16 @@ export const startTikTokVideoWorker = (): void => {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 async function handleVideoUpload(job: Job): Promise<void> {
-  const { accessToken, filePath, fileSizeBytes, request } = job.data as TikTokVideoJobPayload;
+  let { accessToken, refreshToken, expiresAt, filePath, fileSizeBytes, request } = job.data as TikTokVideoJobPayload;
+
+  // Refresh the access token if it has expired, matching the YouTube sync pattern
+  if (Date.now() >= expiresAt) {
+    logger.info('TikTok access token expired, refreshing before upload', { jobId: job.id });
+    const refreshed = await tiktokService.refreshAccessToken(refreshToken);
+    accessToken = refreshed.accessToken;
+    refreshToken = refreshed.refreshToken;
+    expiresAt = refreshed.expiresAt;
+  }
 
   const current = tokenConcurrency.get(accessToken) ?? 0;
   if (current >= MAX_CONCURRENT_UPLOADS_PER_TOKEN) {

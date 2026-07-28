@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
-import type { WebhookDelivery } from '../api/models/WebhookDelivery';
-import type { WebhookSubscription } from '../api/models/WebhookSubscription';
-import { WebhooksService } from '../api/services/WebhooksService';
-import { OpenAPI } from '../api/core/OpenAPI';
+import type { WebhookDelivery, WebhookSubscription } from '../api/models';
+import { WebhooksService as GeneratedWebhooksService } from '../api/services/WebhooksService';
 
 // Event types sourced from src/schemas/webhooks.ts (frontend mirror)
 type WebhookEventType =
@@ -22,9 +20,31 @@ const SUPPORTED_EVENTS: WebhookEventType[] = [
   'system.health_check',
 ];
 
-// Auth token is read lazily on every request so a login/logout during the
-// session is picked up without needing to reconfigure the client.
-OpenAPI.TOKEN = async () => localStorage.getItem('sf_auth_token') ?? '';
+// ── Real backend-backed webhook client ────────────────────────────────────────
+// Talks to the generated OpenAPI client (src/api/services/WebhooksService),
+// which is authenticated via configureApi() at app startup (see src/main.tsx).
+
+const WebhooksService = {
+  async listWebhooks(): Promise<WebhookSubscription[]> {
+    return GeneratedWebhooksService.getWebhooks();
+  },
+  async createWebhook(input: { url: string; secret: string; events: WebhookEventType[] }): Promise<WebhookSubscription> {
+    return GeneratedWebhooksService.postWebhooks({ requestBody: input });
+  },
+  async deleteWebhook(id: string): Promise<void> {
+    await GeneratedWebhooksService.deleteWebhooks({ id });
+  },
+  async testWebhook(id: string, input: { eventType: WebhookEventType }): Promise<{ message: string }> {
+    const result = await GeneratedWebhooksService.postWebhooksTest({ id, requestBody: input });
+    return { message: result?.message ?? `Test "${input.eventType}" sent.` };
+  },
+  async listDeliveries(id: string): Promise<WebhookDelivery[]> {
+    return GeneratedWebhooksService.getWebhooksDeliveries({ id });
+  },
+  async replayDelivery(id: string, deliveryId: string): Promise<void> {
+    await GeneratedWebhooksService.postWebhooksDeliveriesReplay({ id, deliveryId });
+  },
+};
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

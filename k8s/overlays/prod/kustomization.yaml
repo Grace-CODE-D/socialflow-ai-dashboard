@@ -62,6 +62,21 @@ patches:
         template:
           spec:
             terminationGracePeriodSeconds: 90
+  # ClusterSecretStore's serviceAccountRef is not namespaced by kustomize's
+  # top-level `namespace:` field (it only rewrites metadata.namespace), so it
+  # must be patched explicitly or prod would auth as the dev service account.
+  - patch: |-
+      apiVersion: external-secrets.io/v1beta1
+      kind: ClusterSecretStore
+      metadata:
+        name: aws-secrets-manager
+      spec:
+        provider:
+          aws:
+            auth:
+              jwt:
+                serviceAccountRef:
+                  namespace: socialflow-prod
   # Prod hostname + TLS
   - patch: |-
       apiVersion: networking.k8s.io/v1

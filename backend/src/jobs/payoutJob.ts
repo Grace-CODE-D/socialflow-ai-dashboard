@@ -4,6 +4,9 @@ import { PayoutJobData, PAYOUT_QUEUE_NAME } from '../queues/payoutQueue';
 import { prisma } from '../lib/prisma';
 import { createHash } from 'crypto';
 import { LockService } from '../utils/LockService';
+import { createLogger } from '../lib/logger';
+
+const logger = createLogger('payout-job');
 
 /**
  * Derive a deterministic transaction hash for a payout.
@@ -43,14 +46,21 @@ export async function processPayoutJob(job: Job<PayoutJobData>) {
     metadata,
   } = job.data;
 
-  console.log(`[PayoutJob] Processing job ${job.id} - ${amount} ${currency} to ${recipient}`);
+  logger.info(`Processing job ${job.id}`, { jobId: job.id, groupId, amount, currency, recipient });
 
   try {
     // Log job progress
     await job.updateProgress(10);
 
     // Validate payout data
-    if (!groupId || amount === undefined || amount === null || !recipient || !recipientType || !currency) {
+    if (
+      !groupId ||
+      amount === undefined ||
+      amount === null ||
+      !recipient ||
+      !recipientType ||
+      !currency
+    ) {
       throw new Error('Missing required payout fields');
     }
 
@@ -83,10 +93,10 @@ export async function processPayoutJob(job: Job<PayoutJobData>) {
         });
 
         if (existing) {
-          console.log(
-            `[PayoutJob] Duplicate detected for job ${job.id} —` +
-              ` skipping submission (existing tx: ${existing.id})`,
-          );
+          logger.info(`Duplicate detected for job ${job.id} — skipping submission`, {
+            jobId: job.id,
+            existingTransactionId: existing.id,
+          });
           skipped = true;
         } else {
           await prisma.payoutTransaction.create({
@@ -122,10 +132,13 @@ export async function processPayoutJob(job: Job<PayoutJobData>) {
 
       await job.updateProgress(95);
 
-      console.log(
-        `[PayoutJob] Job ${job.id} completed successfully - ${amount} ${currency} sent to ${recipient}` +
-          (skipped ? ' (skipped — duplicate)' : ''),
-      );
+      logger.info(`Job ${job.id} completed successfully`, {
+        jobId: job.id,
+        amount,
+        currency,
+        recipient,
+        skipped,
+      });
 
       return {
         success: true,
@@ -144,7 +157,7 @@ export async function processPayoutJob(job: Job<PayoutJobData>) {
     });
   } catch (error: any) {
     const reason = error.message as string;
-    console.error(`[PayoutJob] Job ${job.id} failed:`, reason);
+    logger.error(`Job ${job.id} failed`, { jobId: job.id, reason });
 
     try {
       await prisma.payoutFailure.create({
@@ -158,7 +171,10 @@ export async function processPayoutJob(job: Job<PayoutJobData>) {
         },
       });
     } catch (dbErr: any) {
-      console.error(`[PayoutJob] Failed to persist payout failure record:`, dbErr.message);
+      logger.error('Failed to persist payout failure record', {
+        jobId: job.id,
+        error: dbErr.message,
+      });
     }
 
     throw new Error(`Failed to process payout: ${reason}`);
@@ -180,7 +196,7 @@ export function createPayoutWorker() {
 export async function processBatchPayoutJob(job: Job<{ payouts: PayoutJobData[] }>) {
   const { payouts } = job.data;
 
-  console.log(`[BatchPayoutJob] Processing job ${job.id} - ${payouts.length} payouts`);
+  logger.info(`Processing batch job ${job.id}`, { jobId: job.id, payoutCount: payouts.length });
 
   const results: Array<{
     success: boolean;
@@ -227,9 +243,12 @@ export async function processBatchPayoutJob(job: Job<{ payouts: PayoutJobData[] 
   const successful = results.filter((r) => r.success).length;
   const failed = results.filter((r) => !r.success).length;
 
-  console.log(
-    `[BatchPayoutJob] Job ${job.id} completed: ${successful} successful (${successfulAmount}), ${failed} failed`,
-  );
+  logger.info(`Batch job ${job.id} completed`, {
+    jobId: job.id,
+    successful,
+    successfulAmount,
+    failed,
+  });
 
   // Re-enqueue failed items individually so each gets its own retry budget
   if (failed > 0) {

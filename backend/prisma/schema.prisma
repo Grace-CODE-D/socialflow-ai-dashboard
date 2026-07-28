@@ -19,6 +19,7 @@ model User {
   createdAt           DateTime             @default(now())
   deletedAt           DateTime?
   memberships         OrganizationMember[]
+  roleAssignment      RoleAssignment?
 
   @@index([email])
   @@index([createdAt])
@@ -34,6 +35,19 @@ model PasswordHistory {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// Durable RBAC role assignment — one row per user, persisted so that
+// role checks are consistent across replicas and survive restarts/deploys.
+model RoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Organization {
