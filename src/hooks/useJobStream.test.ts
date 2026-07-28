@@ -38,7 +38,7 @@ global.fetch = mockFetch as any;
 beforeEach(() => {
   MockEventSource.instances = [];
   jest.useFakeTimers();
-  
+
   // Default mock response for SSE ticket endpoint
   mockFetch.mockResolvedValue({
     ok: true,
@@ -86,7 +86,7 @@ test('fetches SSE ticket before connecting', async () => {
     expect.objectContaining({
       method: 'POST',
       headers: { Authorization: 'Bearer my-jwt-token' },
-    })
+    }),
   );
 });
 
@@ -166,7 +166,7 @@ test('reverts optimistic pending state and surfaces an error on a failed retry r
   expect(result.current.retryError).toMatch(/500/);
 });
 
-test('stops reconnecting after maxRetries', () => {
+test('stops reconnecting after maxRetries', async () => {
   const { result } = renderHook(() => useJobStream('token', { maxRetries: 2 }));
 
   await act(async () => {

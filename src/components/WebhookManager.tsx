@@ -1,24 +1,7 @@
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
 import type { WebhookDelivery, WebhookSubscription } from '../api/models';
 import { WebhooksService as GeneratedWebhooksService } from '../api/services/WebhooksService';
-
-// Event types sourced from src/schemas/webhooks.ts (frontend mirror)
-type WebhookEventType =
-  | 'post.published'
-  | 'post.failed'
-  | 'analytics.report_ready'
-  | 'blockchain.transaction_completed'
-  | 'blockchain.transaction_failed'
-  | 'system.health_check';
-
-const SUPPORTED_EVENTS: WebhookEventType[] = [
-  'post.published',
-  'post.failed',
-  'analytics.report_ready',
-  'blockchain.transaction_completed',
-  'blockchain.transaction_failed',
-  'system.health_check',
-];
+import { SUPPORTED_EVENTS, type WebhookEventType } from '@socialflow/shared';
 
 // ── Real backend-backed webhook client ────────────────────────────────────────
 // Talks to the generated OpenAPI client (src/api/services/WebhooksService),
@@ -28,13 +11,20 @@ const WebhooksService = {
   async listWebhooks(): Promise<WebhookSubscription[]> {
     return GeneratedWebhooksService.getWebhooks();
   },
-  async createWebhook(input: { url: string; secret: string; events: WebhookEventType[] }): Promise<WebhookSubscription> {
+  async createWebhook(input: {
+    url: string;
+    secret: string;
+    events: WebhookEventType[];
+  }): Promise<WebhookSubscription> {
     return GeneratedWebhooksService.postWebhooks({ requestBody: input });
   },
   async deleteWebhook(id: string): Promise<void> {
     await GeneratedWebhooksService.deleteWebhooks({ id });
   },
-  async testWebhook(id: string, input: { eventType: WebhookEventType }): Promise<{ message: string }> {
+  async testWebhook(
+    id: string,
+    input: { eventType: WebhookEventType },
+  ): Promise<{ message: string }> {
     const result = await GeneratedWebhooksService.postWebhooksTest({ id, requestBody: input });
     return { message: result?.message ?? `Test "${input.eventType}" sent.` };
   },
@@ -129,11 +119,16 @@ function generateSecret(): string {
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case 'LOAD_START':  return { ...state, loading: true, error: null };
-    case 'LOAD_OK':     return { ...state, loading: false, webhooks: action.webhooks };
-    case 'LOAD_ERR':    return { ...state, loading: false, error: action.error };
-    case 'ADD':         return { ...state, webhooks: [...state.webhooks, action.webhook] };
-    case 'REMOVE':      return { ...state, webhooks: state.webhooks.filter(w => w.id !== action.id) };
+    case 'LOAD_START':
+      return { ...state, loading: true, error: null };
+    case 'LOAD_OK':
+      return { ...state, loading: false, webhooks: action.webhooks };
+    case 'LOAD_ERR':
+      return { ...state, loading: false, error: action.error };
+    case 'ADD':
+      return { ...state, webhooks: [...state.webhooks, action.webhook] };
+    case 'REMOVE':
+      return { ...state, webhooks: state.webhooks.filter((w) => w.id !== action.id) };
     case 'DELIVERIES_OK':
       return { ...state, deliveries: { ...state.deliveries, [action.id]: action.deliveries } };
     case 'TOGGLE_EXPAND':
@@ -148,7 +143,8 @@ function reducer(state: State, action: Action): State {
       next.delete(key);
       return { ...state, replayingDeliveries: next };
     }
-    default: return state;
+    default:
+      return state;
   }
 }
 
@@ -156,11 +152,16 @@ function reducer(state: State, action: Action): State {
 
 const DELIVERY_COLORS: Record<string, string> = {
   success: 'bg-green-100 text-green-700',
-  failed:  'bg-red-100  text-red-700',
+  failed: 'bg-red-100  text-red-700',
   pending: 'bg-gray-100 text-gray-600',
 };
 
-function DeliveryRow({ d, webhookId, onReplay, isReplaying }: {
+function DeliveryRow({
+  d,
+  webhookId,
+  onReplay,
+  isReplaying,
+}: {
   d: WebhookDelivery;
   webhookId: string;
   onReplay: (webhookId: string, deliveryId: string) => void;
@@ -171,7 +172,9 @@ function DeliveryRow({ d, webhookId, onReplay, isReplaying }: {
       <td className="py-1 px-2 font-mono text-gray-500">{d.id?.slice(0, 8)}…</td>
       <td className="py-1 px-2">{d.eventType}</td>
       <td className="py-1 px-2">
-        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${DELIVERY_COLORS[d.status ?? 'pending']}`}>
+        <span
+          className={`px-1.5 py-0.5 rounded text-xs font-medium ${DELIVERY_COLORS[d.status ?? 'pending']}`}
+        >
           {d.status}
         </span>
       </td>
@@ -191,7 +194,16 @@ function DeliveryRow({ d, webhookId, onReplay, isReplaying }: {
   );
 }
 
-function WebhookRow({ webhook, deliveries, expanded, onExpand, onDelete, onTest, onReplay, replayingDeliveries }: {
+function WebhookRow({
+  webhook,
+  deliveries,
+  expanded,
+  onExpand,
+  onDelete,
+  onTest,
+  onReplay,
+  replayingDeliveries,
+}: {
   webhook: WebhookSubscription;
   deliveries: WebhookDelivery[];
   expanded: boolean;
@@ -208,38 +220,46 @@ function WebhookRow({ webhook, deliveries, expanded, onExpand, onDelete, onTest,
       <div className="flex items-center justify-between px-4 py-3 bg-white">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-800 truncate">{webhook.url}</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {webhook.events?.join(', ')}
-          </p>
+          <p className="text-xs text-gray-500 mt-0.5">{webhook.events?.join(', ')}</p>
         </div>
 
         <div className="flex items-center gap-3 ml-4 shrink-0">
           {/* last delivery badge */}
           {last ? (
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${DELIVERY_COLORS[last.status ?? 'pending']}`}>
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-medium ${DELIVERY_COLORS[last.status ?? 'pending']}`}
+            >
               {last.status} {last.responseStatus ? `(${last.responseStatus})` : ''}
             </span>
           ) : (
             <span className="text-xs text-gray-400">no deliveries</span>
           )}
 
-          <span className={`w-2 h-2 rounded-full ${webhook.isActive ? 'bg-green-400' : 'bg-gray-300'}`}
-                title={webhook.isActive ? 'Active' : 'Inactive'} />
+          <span
+            className={`w-2 h-2 rounded-full ${webhook.isActive ? 'bg-green-400' : 'bg-gray-300'}`}
+            title={webhook.isActive ? 'Active' : 'Inactive'}
+          />
 
-          <button onClick={() => onTest(webhook.id!)}
-                  className="text-xs text-blue-600 hover:underline"
-                  aria-label="Send test event">
+          <button
+            onClick={() => onTest(webhook.id!)}
+            className="text-xs text-blue-600 hover:underline"
+            aria-label="Send test event"
+          >
             Test
           </button>
-          <button onClick={onExpand}
-                  className="text-xs text-gray-500 hover:text-gray-800"
-                  aria-expanded={expanded}
-                  aria-label="Toggle delivery log">
+          <button
+            onClick={onExpand}
+            className="text-xs text-gray-500 hover:text-gray-800"
+            aria-expanded={expanded}
+            aria-label="Toggle delivery log"
+          >
             {expanded ? '▲ Hide' : '▼ Logs'}
           </button>
-          <button onClick={() => onDelete(webhook.id!)}
-                  className="text-xs text-red-500 hover:text-red-700"
-                  aria-label="Delete webhook">
+          <button
+            onClick={() => onDelete(webhook.id!)}
+            className="text-xs text-red-500 hover:text-red-700"
+            aria-label="Delete webhook"
+          >
             Delete
           </button>
         </div>
@@ -262,11 +282,11 @@ function WebhookRow({ webhook, deliveries, expanded, onExpand, onDelete, onTest,
                 </tr>
               </thead>
               <tbody>
-                {deliveries.map(d => (
-                  <DeliveryRow 
-                    key={d.id} 
-                    d={d} 
-                    webhookId={webhook.id!} 
+                {deliveries.map((d) => (
+                  <DeliveryRow
+                    key={d.id}
+                    d={d}
+                    webhookId={webhook.id!}
                     onReplay={onReplay}
                     isReplaying={replayingDeliveries.has(`${webhook.id}:${d.id}`)}
                   />
@@ -287,13 +307,13 @@ interface CreateFormProps {
 }
 
 function CreateForm({ onCreated }: CreateFormProps) {
-  const [url, setUrl]     = useState('');
+  const [url, setUrl] = useState('');
   const [events, setEvents] = useState<WebhookEventType[]>([]);
-  const [busy, setBusy]   = useState(false);
-  const [err, setErr]     = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   function toggleEvent(e: WebhookEventType) {
-    setEvents(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
+    setEvents((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]));
   }
 
   async function handleSubmit(ev: React.FormEvent) {
@@ -309,7 +329,8 @@ function CreateForm({ onCreated }: CreateFormProps) {
       const secret = generateSecret();
       const created = await WebhooksService.postWebhooks({ requestBody: { url, secret, events } });
       onCreated(created, secret);
-      setUrl(''); setEvents([]);
+      setUrl('');
+      setEvents([]);
     } catch (e: any) {
       setErr(e?.message ?? 'Failed to create webhook.');
     } finally {
@@ -318,34 +339,56 @@ function CreateForm({ onCreated }: CreateFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="border rounded-lg p-4 bg-white space-y-3" aria-label="Create webhook">
+    <form
+      onSubmit={handleSubmit}
+      className="border rounded-lg p-4 bg-white space-y-3"
+      aria-label="Create webhook"
+    >
       <h3 className="text-sm font-semibold text-gray-700">New Webhook</h3>
 
       <div className="space-y-1">
-        <label className="text-xs text-gray-600" htmlFor="wh-url">Endpoint URL (HTTPS)</label>
-        <input id="wh-url" type="url" value={url} onChange={e => setUrl(e.target.value)}
-               placeholder="https://example.com/webhook"
-               className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-               required />
+        <label className="text-xs text-gray-600" htmlFor="wh-url">
+          Endpoint URL (HTTPS)
+        </label>
+        <input
+          id="wh-url"
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://example.com/webhook"
+          className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          required
+        />
       </div>
 
       <fieldset>
         <legend className="text-xs text-gray-600 mb-1">Events</legend>
         <div className="grid grid-cols-2 gap-1">
-          {SUPPORTED_EVENTS.map(ev => (
+          {SUPPORTED_EVENTS.map((ev) => (
             <label key={ev} className="flex items-center gap-1.5 text-xs cursor-pointer">
-              <input type="checkbox" checked={events.includes(ev)} onChange={() => toggleEvent(ev)}
-                     className="rounded" />
+              <input
+                type="checkbox"
+                checked={events.includes(ev)}
+                onChange={() => toggleEvent(ev)}
+                className="rounded"
+              />
               {ev}
             </label>
           ))}
         </div>
       </fieldset>
 
-      {err && <p className="text-xs text-red-600" role="alert">{err}</p>}
+      {err && (
+        <p className="text-xs text-red-600" role="alert">
+          {err}
+        </p>
+      )}
 
-      <button type="submit" disabled={busy}
-              className="w-full bg-blue-600 text-white text-sm rounded py-1.5 hover:bg-blue-700 disabled:opacity-50">
+      <button
+        type="submit"
+        disabled={busy}
+        className="w-full bg-blue-600 text-white text-sm rounded py-1.5 hover:bg-blue-700 disabled:opacity-50"
+      >
         {busy ? 'Creating…' : 'Create Webhook'}
       </button>
     </form>
@@ -356,14 +399,17 @@ function CreateForm({ onCreated }: CreateFormProps) {
 
 function TestModal({ webhookId, onClose }: { webhookId: string; onClose: () => void }) {
   const [eventType, setEventType] = useState<WebhookEventType>(SUPPORTED_EVENTS[0]);
-  const [result, setResult]       = useState<string | null>(null);
-  const [busy, setBusy]           = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function send() {
     setBusy(true);
     setResult(null);
     try {
-      const res = await WebhooksService.postWebhooksTest({ id: webhookId, requestBody: { eventType } });
+      const res = await WebhooksService.postWebhooksTest({
+        id: webhookId,
+        requestBody: { eventType },
+      });
       setResult(res?.message ?? 'Test event sent.');
     } catch (e: any) {
       setResult(`Error: ${e?.message ?? 'unknown'}`);
@@ -373,24 +419,41 @@ function TestModal({ webhookId, onClose }: { webhookId: string; onClose: () => v
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-label="Send test event">
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Send test event"
+    >
       <div className="bg-white rounded-lg shadow-xl p-6 w-80 space-y-4">
         <h3 className="font-semibold text-gray-800">Send Test Event</h3>
 
         <label className="block text-xs text-gray-600">
           Event type
-          <select value={eventType} onChange={e => setEventType(e.target.value as WebhookEventType)}
-                  className="mt-1 w-full border rounded px-2 py-1.5 text-sm">
-            {SUPPORTED_EVENTS.map(ev => <option key={ev} value={ev}>{ev}</option>)}
+          <select
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value as WebhookEventType)}
+            className="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+          >
+            {SUPPORTED_EVENTS.map((ev) => (
+              <option key={ev} value={ev}>
+                {ev}
+              </option>
+            ))}
           </select>
         </label>
 
         {result && <p className="text-xs text-gray-700 bg-gray-50 rounded p-2">{result}</p>}
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          <button onClick={send} disabled={busy}
-                  className="bg-blue-600 text-white text-sm rounded px-4 py-1.5 hover:bg-blue-700 disabled:opacity-50">
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">
+            Cancel
+          </button>
+          <button
+            onClick={send}
+            disabled={busy}
+            className="bg-blue-600 text-white text-sm rounded px-4 py-1.5 hover:bg-blue-700 disabled:opacity-50"
+          >
             {busy ? 'Sending…' : 'Send'}
           </button>
         </div>
@@ -403,9 +466,14 @@ function TestModal({ webhookId, onClose }: { webhookId: string; onClose: () => v
 
 export default function WebhookManager() {
   const [state, dispatch] = useReducer(reducer, {
-    webhooks: [], loading: false, error: null, deliveries: {}, expandedId: null, replayingDeliveries: new Set<string>(),
+    webhooks: [],
+    loading: false,
+    error: null,
+    deliveries: {},
+    expandedId: null,
+    replayingDeliveries: new Set<string>(),
   });
-  const [testingId, setTestingId]       = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
   const [pendingSecret, setPendingSecret] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -418,7 +486,9 @@ export default function WebhookManager() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function handleExpand(id: string) {
     dispatch({ type: 'TOGGLE_EXPAND', id });
@@ -460,22 +530,35 @@ export default function WebhookManager() {
     <section className="space-y-6" aria-label="Webhook Manager">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-800">Webhooks</h2>
-        <button onClick={load} className="text-xs text-blue-600 hover:underline" aria-label="Refresh webhooks">
+        <button
+          onClick={load}
+          className="text-xs text-blue-600 hover:underline"
+          aria-label="Refresh webhooks"
+        >
           Refresh
         </button>
       </div>
 
-      <CreateForm onCreated={(w, secret) => { dispatch({ type: 'ADD', webhook: w }); setPendingSecret(secret); }} />
+      <CreateForm
+        onCreated={(w, secret) => {
+          dispatch({ type: 'ADD', webhook: w });
+          setPendingSecret(secret);
+        }}
+      />
 
       {state.loading && <p className="text-sm text-gray-500">Loading…</p>}
-      {state.error   && <p className="text-sm text-red-600" role="alert">{state.error}</p>}
+      {state.error && (
+        <p className="text-sm text-red-600" role="alert">
+          {state.error}
+        </p>
+      )}
 
       {!state.loading && state.webhooks.length === 0 && !state.error && (
         <p className="text-sm text-gray-400">No webhooks registered yet.</p>
       )}
 
       <div className="space-y-3">
-        {state.webhooks.map(w => (
+        {state.webhooks.map((w) => (
           <WebhookRow
             key={w.id}
             webhook={w}
@@ -483,16 +566,14 @@ export default function WebhookManager() {
             expanded={state.expandedId === w.id}
             onExpand={() => handleExpand(w.id!)}
             onDelete={handleDelete}
-            onTest={id => setTestingId(id)}
+            onTest={(id) => setTestingId(id)}
             onReplay={handleReplay}
             replayingDeliveries={state.replayingDeliveries}
           />
         ))}
       </div>
 
-      {testingId && (
-        <TestModal webhookId={testingId} onClose={() => setTestingId(null)} />
-      )}
+      {testingId && <TestModal webhookId={testingId} onClose={() => setTestingId(null)} />}
 
       {pendingSecret && (
         <OneTimeSecretModal secret={pendingSecret} onClose={() => setPendingSecret(null)} />
