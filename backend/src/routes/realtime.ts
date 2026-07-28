@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/authenticate';
 import { eventBus, JobProgressEvent } from '../lib/eventBus';
 import { createLogger } from '../lib/logger';
 import { config } from '../config/config';
+import { sseTicketService } from '../services/SSETicketService';
 
 const router = Router();
 const logger = createLogger('SSE');
@@ -62,12 +63,13 @@ router.get('/stream', (req: AuthRequest, res: Response) => {
       return;
     }
 
-  try {
-    const payload = jwt.verify(token, config.JWT_SECRET) as jwt.JwtPayload;
-    userId = payload.sub as string;
-  } catch {
-    res.status(401).json({ message: 'Invalid or expired token' });
-    return;
+    try {
+      const payload = jwt.verify(token, config.JWT_SECRET) as jwt.JwtPayload;
+      userId = payload.sub as string;
+    } catch {
+      res.status(401).json({ message: 'Invalid or expired token' });
+      return;
+    }
   }
 
   // SSE headers
