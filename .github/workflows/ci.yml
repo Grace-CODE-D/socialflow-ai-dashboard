@@ -66,6 +66,14 @@ jobs:
           fi
           echo "✓ Production overlay uses correct cert-manager issuer"
 
+      - name: Reject dev namespace references in non-dev overlays
+        run: |
+          if grep -n "socialflow-dev" /tmp/prod-manifests.yaml; then
+            echo "ERROR: prod overlay's rendered manifests reference the socialflow-dev namespace"
+            exit 1
+          fi
+          echo "✓ No non-dev overlay references the socialflow-dev namespace"
+
   security:
     name: Security Vulnerability Scan
     runs-on: ubuntu-latest
