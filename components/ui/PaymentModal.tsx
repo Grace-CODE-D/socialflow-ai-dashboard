@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from './Card';
 import { SponsoredBadge } from './SponsoredBadge';
 import { blockchainService } from '../../services/blockchainService';
@@ -50,6 +50,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [step, setStep] = useState<'select' | 'connect' | 'confirm' | 'processing' | 'success'>('select');
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const tiers = blockchainService.getSponsorshipTiers();
 
@@ -61,6 +62,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setErrorCode(null);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+        successTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const handleConnectWallet = async () => {
     setIsConnecting(true);
@@ -102,7 +112,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       
       if (completedTransaction.status === 'confirmed') {
         setStep('success');
-        setTimeout(() => {
+        successTimeoutRef.current = setTimeout(() => {
+          successTimeoutRef.current = null;
           onPaymentComplete(completedTransaction);
           onClose();
         }, 2000);

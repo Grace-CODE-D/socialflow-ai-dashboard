@@ -307,7 +307,7 @@ function CreateForm({ onCreated }: CreateFormProps) {
     try {
       // Generate a secure random secret — shown once to the user after creation
       const secret = generateSecret();
-      const created = await WebhooksService.createWebhook({ url, secret, events });
+      const created = await WebhooksService.postWebhooks({ requestBody: { url, secret, events } });
       onCreated(created, secret);
       setUrl(''); setEvents([]);
     } catch (e: any) {
@@ -363,8 +363,8 @@ function TestModal({ webhookId, onClose }: { webhookId: string; onClose: () => v
     setBusy(true);
     setResult(null);
     try {
-      const res = await WebhooksService.testWebhook(webhookId, { eventType });
-      setResult(res.message ?? 'Test event sent.');
+      const res = await WebhooksService.postWebhooksTest({ id: webhookId, requestBody: { eventType } });
+      setResult(res?.message ?? 'Test event sent.');
     } catch (e: any) {
       setResult(`Error: ${e?.message ?? 'unknown'}`);
     } finally {
@@ -411,7 +411,7 @@ export default function WebhookManager() {
   const load = useCallback(async () => {
     dispatch({ type: 'LOAD_START' });
     try {
-      const webhooks = await WebhooksService.listWebhooks();
+      const webhooks = await WebhooksService.getWebhooks();
       dispatch({ type: 'LOAD_OK', webhooks });
     } catch (e: any) {
       dispatch({ type: 'LOAD_ERR', error: e?.message ?? 'Failed to load webhooks.' });
@@ -424,7 +424,7 @@ export default function WebhookManager() {
     dispatch({ type: 'TOGGLE_EXPAND', id });
     if (state.expandedId !== id && !state.deliveries[id]) {
       try {
-        const deliveries = await WebhooksService.listDeliveries(id);
+        const deliveries = await WebhooksService.getWebhooksDeliveries({ id });
         dispatch({ type: 'DELIVERIES_OK', id, deliveries });
       } catch {
         dispatch({ type: 'DELIVERIES_OK', id, deliveries: [] });
@@ -435,7 +435,7 @@ export default function WebhookManager() {
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this webhook?')) return;
     try {
-      await WebhooksService.deleteWebhook(id);
+      await WebhooksService.deleteWebhooks({ id });
       dispatch({ type: 'REMOVE', id });
     } catch (e: any) {
       alert(e?.message ?? 'Delete failed.');
@@ -445,9 +445,9 @@ export default function WebhookManager() {
   async function handleReplay(webhookId: string, deliveryId: string) {
     dispatch({ type: 'REPLAY_START', webhookId, deliveryId });
     try {
-      await WebhooksService.replayDelivery(webhookId, deliveryId);
+      await WebhooksService.postWebhooksDeliveriesReplay({ id: webhookId, deliveryId });
       // Refresh deliveries for this webhook
-      const deliveries = await WebhooksService.listDeliveries(webhookId);
+      const deliveries = await WebhooksService.getWebhooksDeliveries({ id: webhookId });
       dispatch({ type: 'DELIVERIES_OK', id: webhookId, deliveries });
     } catch (e: any) {
       alert(e?.message ?? 'Replay failed.');
