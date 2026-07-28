@@ -1,23 +1,6 @@
 import React, { useCallback, useEffect, useReducer, useState } from 'react';
 import type { WebhookDelivery, WebhookSubscription } from '../api/models';
-
-// Event types sourced from src/schemas/webhooks.ts (frontend mirror)
-type WebhookEventType =
-  | 'post.published'
-  | 'post.failed'
-  | 'analytics.report_ready'
-  | 'blockchain.transaction_completed'
-  | 'blockchain.transaction_failed'
-  | 'system.health_check';
-
-const SUPPORTED_EVENTS: WebhookEventType[] = [
-  'post.published',
-  'post.failed',
-  'analytics.report_ready',
-  'blockchain.transaction_completed',
-  'blockchain.transaction_failed',
-  'system.health_check',
-];
+import { SUPPORTED_EVENTS, type WebhookEventType } from '@socialflow/shared';
 
 // ── Frontend-only webhook store ───────────────────────────────────────────────
 // The generated WebhooksService talks to a backend that is not running in this
