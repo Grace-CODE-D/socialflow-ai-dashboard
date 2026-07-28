@@ -2,16 +2,25 @@
  * Coverage for #1303 — the GraphQL context layer had zero test coverage.
  * Exercises buildContext() for valid, invalid, missing, and
  * blacklisted-token cases.
+ *
+ * Also covers #1262 — buildContext must validate tokens against the
+ * config-validated JWT_SECRET, not a hardcoded fallback string.
  */
 import { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthBlacklistService } from '../../services/AuthBlacklistService';
 
+const TEST_SECRET = 'test-secret-that-is-at-least-32-chars!!';
+
+jest.mock('../../config/config', () => ({
+  config: { JWT_SECRET: 'test-secret-that-is-at-least-32-chars!!' },
+}));
+
 jest.mock('../../services/AuthBlacklistService', () => ({
   AuthBlacklistService: {
     isBlacklisted: jest.fn(),
-    keyFromPayload: jest.fn((p: { sub?: string; jti?: string; iat?: number }) =>
-      p.jti ?? `${p.sub}:${p.iat}`,
+    keyFromPayload: jest.fn(
+      (p: { sub?: string; jti?: string; iat?: number }) => p.jti ?? `${p.sub}:${p.iat}`,
     ),
   },
 }));
@@ -21,8 +30,7 @@ import { buildContext } from '../context';
 const mockIsBlacklisted = AuthBlacklistService.isBlacklisted as jest.Mock;
 const mockKeyFromPayload = AuthBlacklistService.keyFromPayload as jest.Mock;
 
-// unitSetup.ts sets this for the whole 'unit' Jest project.
-const SECRET = process.env.JWT_SECRET as string;
+const SECRET = TEST_SECRET;
 
 function makeReq(authorization?: string): { req: Request } {
   return { req: { headers: { authorization } } as unknown as Request };
@@ -95,5 +103,20 @@ describe('buildContext', () => {
 
     expect(mockIsBlacklisted).toHaveBeenCalledWith('jti-blacklisted');
     expect(ctx).toEqual({});
+  });
+});
+
+describe('#1262 buildContext JWT_SECRET', () => {
+  it('accepts a token signed with the validated config.JWT_SECRET', async () => {
+    mockIsBlacklisted.mockResolvedValue(false);
+    const token = jwt.sign({ sub: 'user-1' }, TEST_SECRET);
+    const ctx = await buildContext(makeReq(`Bearer ${token}`));
+    expect(ctx.userId).toBe('user-1');
+  });
+
+  it('rejects a token signed with the old hardcoded fallback secret', async () => {
+    const token = jwt.sign({ sub: 'attacker' }, 'change-me-in-production');
+    const ctx = await buildContext(makeReq(`Bearer ${token}`));
+    expect(ctx.userId).toBeUndefined();
   });
 });

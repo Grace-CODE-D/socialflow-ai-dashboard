@@ -50,6 +50,14 @@ const envSchema = z
       ),
     JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
+    // ── CSRF ──────────────────────────────────────────────────────────────────
+    CSRF_SECRET: z
+      .string()
+      .min(
+        JWT_SECRET_MIN_LENGTH,
+        `CSRF_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters`,
+      ),
+
     // ── Redis ─────────────────────────────────────────────────────────────────
     // Optional single-URL form (e.g. rediss://user:pass@host:port). When set,
     // it takes precedence over the individual REDIS_HOST/PORT/PASSWORD fields.

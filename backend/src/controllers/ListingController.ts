@@ -68,8 +68,8 @@ export const toggleListingVisibility = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { isActive } = req.body;
 
-    const mentorId = (req as any).user?.id || req.body.mentorId;
-    const orgId: string | undefined = (req as any).user?.organizationId;
+    const mentorId = (req as any).user?.id;
+    const orgId: string | undefined = (req as any).activeOrgId;
 
     if (isActive === undefined) {
       return res.status(400).json({ success: false, message: 'isActive is required' });
