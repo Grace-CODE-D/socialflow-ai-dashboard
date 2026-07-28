@@ -17,6 +17,8 @@ dist-electron
 out
 release
 *.tsbuildinfo
+packages/shared/src/**/*.js
+packages/shared/src/**/*.js.map
 
 # Environment files
 .env

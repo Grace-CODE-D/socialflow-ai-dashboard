@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -15,7 +15,8 @@ import {
 } from 'recharts';
 import { GlassCard } from '../components/ui/GlassCard';
 import { StatBadge } from '../components/ui/StatBadge';
-import { buildDailySeries, platformShare } from '../lib/sampleAnalytics';
+import { buildDailySeries, platformShare as samplePlatformShare, DailyPoint, PlatformShare } from '../lib/sampleAnalytics';
+import { AnalyticsService } from '../api/services/AnalyticsService';
 
 const tooltipStyle = {
   background: 'rgba(15,15,22,0.95)',
@@ -25,8 +26,53 @@ const tooltipStyle = {
   color: '#fff',
 };
 
+// Explicit demo/offline mode — the only case sample data is allowed to show
+// without a backend call ever having been attempted.
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+
+function isRealAnalyticsResponse(
+  data: unknown,
+): data is { series: DailyPoint[]; platformShare: PlatformShare[] } {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    Array.isArray((data as { series?: unknown }).series) &&
+    ((data as { series: DailyPoint[] }).series.length > 0) &&
+    Array.isArray((data as { platformShare?: unknown }).platformShare)
+  );
+}
+
 export const AnalyticsPage: React.FC = () => {
-  const series = useMemo(() => buildDailySeries(4), []);
+  const [series, setSeries] = useState<DailyPoint[]>(() => buildDailySeries(4));
+  const [platformShare, setPlatformShare] = useState<PlatformShare[]>(samplePlatformShare);
+  const [isSampleData, setIsSampleData] = useState(true);
+
+  useEffect(() => {
+    if (DEMO_MODE) {
+      // Documented demo/offline mode: sample data is shown intentionally.
+      setIsSampleData(true);
+      return;
+    }
+
+    let cancelled = false;
+    AnalyticsService.getAnalytics({})
+      .then((data) => {
+        if (cancelled) return;
+        if (isRealAnalyticsResponse(data)) {
+          setSeries(data.series);
+          setPlatformShare(data.platformShare);
+          setIsSampleData(false);
+        }
+      })
+      .catch(() => {
+        // Backend unreachable or not yet returning real analytics — keep
+        // showing sample data, clearly labeled below, instead of failing.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const totalReach = series.reduce((a, c) => a + c.reach, 0);
   const totalEngagement = series.reduce((a, c) => a + c.engagement, 0);
@@ -35,6 +81,14 @@ export const AnalyticsPage: React.FC = () => {
 
   return (
     <div className="space-y-10 pb-20">
+      {isSampleData && (
+        <div
+          role="status"
+          className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs font-semibold tracking-wide text-yellow-300"
+        >
+          Showing sample data — connect an account or wait for real analytics to sync.
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         <StatBadge label="28-Day Reach" value={`${(totalReach / 1000).toFixed(0)}k`} icon="visibility" color="blue" trend="up" />
         <StatBadge label="Engagement" value={`${(totalEngagement / 1000).toFixed(1)}k`} icon="favorite" color="purple" trend="up" />

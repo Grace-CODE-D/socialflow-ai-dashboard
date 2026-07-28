@@ -2,24 +2,38 @@ import { CorsOptions } from 'cors';
 
 /**
  * Allowed origins per environment.
+ * Keys MUST match the real NODE_ENV values used throughout the codebase
+ * (see backend/src/config/config.ts's Zod schema): development, test, production.
  * To add a new origin: append it to the relevant array below.
- *   - local:   development machines / localhost variants
- *   - staging: staging/preview deployments
- *   - prod:    production domains only
+ *   - development: local dev machines / localhost variants
+ *   - test:        CI / automated test runs (treated like development)
+ *   - production:  production domains only
  */
 const ALLOWED_ORIGINS: Record<string, string[]> = {
-  local: ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000'],
-  staging: ['https://staging.socialflow.app'],
-  prod: ['https://socialflow.app', 'https://www.socialflow.app'],
+  development: ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000'],
+  test: ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000'],
+  production: ['https://socialflow.app', 'https://www.socialflow.app'],
 };
 
-const env = process.env.NODE_ENV ?? 'local';
-const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.local;
+// Read the same NODE_ENV value the rest of the app validates against, rather
+// than re-reading process.env with a different set of expected values —
+// previously this used 'local'/'staging'/'prod' keys that never matched the
+// actual NODE_ENV of 'development'/'test'/'production', so production
+// silently fell back to the localhost allowlist.
+const env = process.env.NODE_ENV ?? 'development';
+
+/**
+ * Flattened list of origins allowed for the current environment. Exported so
+ * other places that need to validate an application-controlled origin
+ * (e.g. Stripe Checkout success/cancel URLs) can reuse the same allow-list
+ * instead of accepting arbitrary attacker-supplied domains.
+ */
+export const allowedOrigins: string[] = ALLOWED_ORIGINS[env] ?? ALLOWED_ORIGINS.development;
 
 export const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
     // Allow server-to-server requests (no Origin header) only outside production
-    if (!origin && env !== 'prod') return callback(null, true);
+    if (!origin && env !== 'production') return callback(null, true);
     if (origin && allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS: origin '${origin}' not allowed`));
   },

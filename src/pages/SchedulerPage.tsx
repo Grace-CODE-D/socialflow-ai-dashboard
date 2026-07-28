@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/ui/GlassCard';
 import { usePosts, ScheduledPost, PostStatus } from '../contexts/PostsContext';
 import { useComposer } from '../contexts/ComposerContext';
 import { useToast } from '../contexts/ToastContext';
+import { TranslationWidget } from '../components/TranslationWidget';
 
 const MaterialIcon = ({ name, className }: { name: string; className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -45,6 +46,7 @@ export const SchedulerPage: React.FC = () => {
   const { posts, removePost, updateStatus } = usePosts();
   const { openComposer } = useComposer();
   const { toast } = useToast();
+  const [translateText, setTranslateText] = useState('');
 
   const sorted = useMemo(
     () => [...posts].sort((a, b) => a.scheduledAt - b.scheduledAt),
@@ -148,6 +150,19 @@ export const SchedulerPage: React.FC = () => {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Translation panel — translate any caption text before scheduling */}
+      <div>
+        <h3 className="text-sm font-medium text-gray-subtext mb-3">Translate Caption</h3>
+        <input
+          type="text"
+          value={translateText}
+          onChange={(e) => setTranslateText(e.target.value)}
+          placeholder="Paste a caption to translate…"
+          className="w-full mb-4 rounded-xl bg-dark-bg/60 border border-dark-border px-4 py-3 text-sm text-white focus:outline-none focus:border-primary-blue/50 transition-all"
+        />
+        {translateText && <TranslationWidget text={translateText} />}
+      </div>
     </div>
   );
 };
