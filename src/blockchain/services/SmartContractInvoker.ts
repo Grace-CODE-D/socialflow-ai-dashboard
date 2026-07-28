@@ -96,15 +96,36 @@ export class SmartContractInvoker {
             // Step 4: Submit transaction
             const response = await this.server.sendTransaction(signedTransaction);
 
-            if (response.status === 'ERROR') {
-                return {
-                    success: false,
-                    error: response.errorResult?.toXDR('base64'),
-                    errorType: 'TRANSACTION_FAILED',
-                };
+            switch (response.status) {
+                case 'ERROR':
+                    return {
+                        success: false,
+                        error: response.errorResult?.toXDR('base64'),
+                        errorType: 'TRANSACTION_FAILED',
+                    };
+                case 'DUPLICATE':
+                    return {
+                        success: false,
+                        error: 'Transaction was already submitted to the network',
+                        errorType: 'DUPLICATE_TRANSACTION',
+                    };
+                case 'TRY_AGAIN_LATER':
+                    return {
+                        success: false,
+                        error: 'Node was unable to accept the transaction; retry submission',
+                        errorType: 'TRY_AGAIN_LATER',
+                    };
+                case 'PENDING':
+                    break;
+                default:
+                    return {
+                        success: false,
+                        error: `Unrecognized sendTransaction status: ${response.status}`,
+                        errorType: 'UNKNOWN',
+                    };
             }
 
-            // Step 5: Wait for transaction confirmation
+            // Step 5: Transaction was accepted for processing — wait for confirmation
             const txHash = response.hash;
             const txResult = await pollTransactionStatus(txHash);
 
