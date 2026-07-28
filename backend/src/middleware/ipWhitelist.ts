@@ -29,13 +29,18 @@ export const ipWhitelistMiddleware = (req: Request, res: Response, next: NextFun
   const clientIp = requestIp.getClientIp(req);
   const whitelist = getAdminIpWhitelist();
 
-  // If no whitelist is configured, allow all by default (per conventional security or block?)
-  // Given the requirement "Restrict access... to specific... IP addresses", 
-  // if the list is empty, we might want to log a warning but allow access if not in production.
-  // For strictness, if the list is expected but empty, we could block.
-  // However, usually, an empty list means the feature is disabled.
+  // Fail closed: an empty whitelist must not grant unrestricted access to the
+  // sensitive admin/ops routes this middleware protects. Configure
+  // ADMIN_IP_WHITELIST to allow trusted IPs through.
   if (whitelist.length === 0) {
-    return next();
+    logger.warn(
+      'ADMIN_IP_WHITELIST is not configured — blocking all requests to IP-restricted routes. ' +
+        'Set ADMIN_IP_WHITELIST to a comma-separated list of allowed IPs/CIDR ranges to grant access.',
+      { path: req.path, method: req.method },
+    );
+    return res.status(403).json({
+      error: 'Access forbidden: IP whitelisting is not configured for this endpoint.',
+    });
   }
 
   if (!clientIp) {

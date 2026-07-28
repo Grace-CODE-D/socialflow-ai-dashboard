@@ -1,17 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
-import { ipWhitelistMiddleware } from '../middleware/ipWhitelist';
-import * as runtime from '../config/runtime';
-import requestIp from 'request-ip';
 
 jest.mock('../config/runtime');
 jest.mock('request-ip');
+
+const mockLogger = {
+  warn: jest.fn(),
+  error: jest.fn(),
+  info: jest.fn(),
+};
 jest.mock('../lib/logger', () => ({
-  createLogger: () => ({
-    warn: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-  }),
+  createLogger: () => mockLogger,
 }));
+
+import { ipWhitelistMiddleware } from '../middleware/ipWhitelist';
+import * as runtime from '../config/runtime';
+import requestIp from 'request-ip';
 
 describe('ipWhitelistMiddleware', () => {
   let mockRequest: Partial<Request>;
@@ -32,12 +35,26 @@ describe('ipWhitelistMiddleware', () => {
     jest.clearAllMocks();
   });
 
-  it('should allow access if whitelist is empty', () => {
+  it('should fail closed (block access) if whitelist is empty', () => {
     (runtime.getAdminIpWhitelist as jest.Mock).mockReturnValue([]);
     (requestIp.getClientIp as jest.Mock).mockReturnValue('127.0.0.1');
 
     ipWhitelistMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
-    expect(nextFunction).toHaveBeenCalled();
+
+    expect(nextFunction).not.toHaveBeenCalled();
+    expect(mockResponse.status).toHaveBeenCalledWith(403);
+  });
+
+  it('should log a loud warning when the whitelist is empty', () => {
+    (runtime.getAdminIpWhitelist as jest.Mock).mockReturnValue([]);
+    (requestIp.getClientIp as jest.Mock).mockReturnValue('127.0.0.1');
+
+    ipWhitelistMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('ADMIN_IP_WHITELIST is not configured'),
+      expect.any(Object),
+    );
   });
 
   it('should allow access if client IP matches an exact entry', () => {
