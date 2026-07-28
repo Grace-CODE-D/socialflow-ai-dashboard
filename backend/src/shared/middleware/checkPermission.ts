@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './authMiddleware';
-import { Permission, RoleStore } from '../models/Role';
+import { Permission, RoleStore } from '../../models/Role';
 
 /**
  * Middleware factory that enforces one or more permissions.

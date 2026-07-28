@@ -96,6 +96,14 @@ export async function addMember(req: AuthRequest, res: Response): Promise<void> 
     return;
   }
 
+  // Only an existing owner can grant the owner role. Without this, an admin
+  // could hand out owner-level access to themselves (an alt account) or an
+  // accomplice — a privilege escalation from admin to owner.
+  if (role === 'owner' && callerMembership.role !== 'owner') {
+    res.status(403).json({ message: 'Only an owner can grant the owner role' });
+    return;
+  }
+
   const member = await prisma.organizationMember.create({
     data: { id: randomUUID(), organizationId: orgId, userId, role },
   });
@@ -119,6 +127,27 @@ export async function removeMember(req: AuthRequest, res: Response): Promise<voi
   if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role)) {
     res.status(403).json({ message: 'Insufficient permissions' });
     return;
+  }
+
+  const targetMembership = await prisma.organizationMember.findUnique({
+    where: { organizationId_userId: { organizationId: orgId, userId } },
+  });
+
+  if (targetMembership?.role === 'owner') {
+    // Only another owner may remove an owner-level member.
+    if (callerMembership.role !== 'owner') {
+      res.status(403).json({ message: 'Only an owner can remove an owner' });
+      return;
+    }
+
+    // Never let the org end up without an owner.
+    const ownerCount = await prisma.organizationMember.count({
+      where: { organizationId: orgId, role: 'owner' },
+    });
+    if (ownerCount <= 1) {
+      res.status(403).json({ message: 'Cannot remove the last owner of an organization' });
+      return;
+    }
   }
 
   await prisma.organizationMember.delete({

@@ -7,6 +7,8 @@ export interface AuthUser {
   name: string;
   email: string;
   plan: string;
+  /** Real follower count sourced from the connected account's profile data, when known. */
+  followerCount?: number;
 }
 
 interface AuthContextValue {

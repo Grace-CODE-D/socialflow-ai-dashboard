@@ -1,5 +1,6 @@
 import { AppError } from '../utils/AppError';
 import { ErrorCode } from '../constants/ErrorCodes';
+import { traceDbQuery } from '../instrumentation';
 
 // IndexedDB Schema for Transaction History
 const DB_NAME = 'SocialFlowTransactions';
@@ -89,28 +90,32 @@ class TransactionDB {
 
   async getTransaction(id: string): Promise<TransactionRecord | undefined> {
     if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(id);
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+
+    return traceDbQuery('transactions.getTransaction', 'indexeddb', () =>
+      new Promise((resolve, reject) => {
+        const transaction = this.db!.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(id);
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }),
+    );
   }
 
   async getAllTransactions(): Promise<TransactionRecord[]> {
     if (!this.db) throw new AppError(ErrorCode.ERR_DATABASE_NOT_INITIALIZED);
-    
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-      
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+
+    return traceDbQuery('transactions.getAllTransactions', 'indexeddb', () =>
+      new Promise((resolve, reject) => {
+        const transaction = this.db!.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }),
+    );
   }
 
   async getTransactionsByType(type: string): Promise<TransactionRecord[]> {

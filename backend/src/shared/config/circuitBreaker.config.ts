@@ -3,6 +3,7 @@
  *
  * Defines circuit breaker settings for different external services
  * to prevent cascading failures and improve system resilience.
+ * Supports: ai, translation, twitter, blockchain, ipfs, price, youtube, facebook, instagram
  */
 
 export interface CircuitBreakerConfig {
@@ -119,6 +120,51 @@ export const CIRCUIT_CONFIGS = {
     volumeThreshold: 3,
     name: 'facebook-service',
   } as CircuitBreakerConfig,
+
+  // Instagram Graph API
+  instagram: {
+    timeout: 20000, // 20 seconds (video uploads can be slow)
+    errorThresholdPercentage: 50,
+    resetTimeout: 60000, // 1 minute cooldown
+    rollingCountTimeout: 20000,
+    rollingCountBuckets: 10,
+    volumeThreshold: 3,
+    name: 'instagram-service',
+  } as CircuitBreakerConfig,
+
+  // TikTok Content Posting API — lenient for chunked video uploads
+  tiktok: {
+    timeout: 60000, // 60 seconds (chunked video uploads can be slow)
+    errorThresholdPercentage: 50,
+    resetTimeout: 60000, // 1 minute cooldown
+    rollingCountTimeout: 30000,
+    rollingCountBuckets: 10,
+    volumeThreshold: 3,
+    name: 'tiktok-service',
+  } as CircuitBreakerConfig,
+
+  // LinkedIn Marketing Developer Platform
+  linkedin: {
+    timeout: 15000, // 15 seconds
+    errorThresholdPercentage: 50,
+    resetTimeout: 60000, // 1 minute cooldown
+    rollingCountTimeout: 20000,
+    rollingCountBuckets: 10,
+    volumeThreshold: 3,
+    name: 'linkedin-service',
+  } as CircuitBreakerConfig,
+
+  // Notification providers (Slack, Discord, email etc.) — Circuit opens after repeated failures
+  // to prevent filling the retry queue when providers are unreachable.
+  notification: {
+    timeout: 15000, // 15 seconds
+    errorThresholdPercentage: 50,
+    resetTimeout: 60000, // 1 minute cooldown
+    rollingCountTimeout: 30000,
+    rollingCountBuckets: 10,
+    volumeThreshold: 5,
+    name: 'notification-service',
+  } as CircuitBreakerConfig,
 };
 
 /**
@@ -137,6 +183,18 @@ export const FALLBACK_STRATEGIES = {
     enabled: false,
     message: 'Social media API unavailable. Please try again later.',
   },
+  tiktok: {
+    enabled: false,
+    message: 'TikTok API unavailable. Please try again later.',
+  },
+  linkedin: {
+    enabled: false,
+    message: 'LinkedIn API unavailable. Please try again later.',
+  },
+  instagram: {
+    enabled: false,
+    message: 'Instagram API unavailable. Please try again later.',
+  },
   blockchain: {
     enabled: false,
     message: 'Blockchain network unavailable. Transaction cannot be processed.',
@@ -149,8 +207,18 @@ export const FALLBACK_STRATEGIES = {
     enabled: true,
     message: 'Price service unavailable. Using cached prices.',
   },
+  youtube: {
+    enabled: false,
+    message: 'YouTube API unavailable. Please try again later.',
+  },
   facebook: {
     enabled: false,
     message: 'Facebook API unavailable. Please try again later.',
+  },
+
+  // Notification — Soft fallback so queue processing doesn't throw unhandled rejections
+  notification: {
+    enabled: true,
+    message: 'Notification service temporarily unavailable. Skipping notification.',
   },
 };
