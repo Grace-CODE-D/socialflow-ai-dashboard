@@ -35,6 +35,7 @@ jest.mock('../../lib/prisma', () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    organizationMember: { findUnique: jest.fn() },
   },
 }));
 
@@ -59,6 +60,13 @@ function authCtx(userId = 'user-1', tokenKey = 'token-key-1') {
 const noAuthCtx = {};
 
 afterEach(() => jest.clearAllMocks());
+
+// Default: the authenticated user is a member of whichever org is under
+// test. Tests that specifically exercise cross-org access override this
+// with `.mockResolvedValueOnce(null)` before invoking the resolver.
+beforeEach(() => {
+  prisma.organizationMember.findUnique.mockResolvedValue({ organizationId: 'org-1' });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AuthenticationError — unauthenticated access
@@ -224,6 +232,15 @@ describe('Query.posts – org-scoped data access', () => {
       }),
     );
   });
+
+  it('throws FORBIDDEN when the caller is not a member of the requested org', async () => {
+    prisma.organizationMember.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      resolvers.Query.posts({}, { organizationId: 'org-2' }, authCtx('user-1')),
+    ).rejects.toThrow('FORBIDDEN');
+    expect(prisma.post.findMany).not.toHaveBeenCalled();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -336,6 +353,20 @@ describe('Mutation.createPost – input handling', () => {
 
     expect(prisma.post.create).not.toHaveBeenCalled();
   });
+
+  it('throws FORBIDDEN when the caller is not a member of the target org', async () => {
+    prisma.organizationMember.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      resolvers.Mutation.createPost(
+        {},
+        { input: { organizationId: 'org-2', content: 'test', platform: 'twitter' } },
+        authCtx('user-1'),
+      ),
+    ).rejects.toThrow('FORBIDDEN');
+
+    expect(prisma.post.create).not.toHaveBeenCalled();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -344,6 +375,7 @@ describe('Mutation.createPost – input handling', () => {
 
 describe('Mutation.updatePost', () => {
   it('updates a post and returns the updated record', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-1' });
     const updated = { id: 'post-1', content: 'updated content', platform: 'twitter' };
     prisma.post.update.mockResolvedValue(updated);
 
@@ -361,6 +393,7 @@ describe('Mutation.updatePost', () => {
   });
 
   it('propagates service-layer errors (error propagation)', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-1' });
     prisma.post.update.mockRejectedValue(new Error('Post not found'));
 
     await expect(
@@ -372,6 +405,26 @@ describe('Mutation.updatePost', () => {
     await expect(
       resolvers.Mutation.updatePost({}, { id: 'post-1', input: {} }, noAuthCtx),
     ).rejects.toThrow('UNAUTHENTICATED');
+    expect(prisma.post.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('throws NOT_FOUND when the post does not exist', async () => {
+    prisma.post.findUnique.mockResolvedValue(null);
+
+    await expect(
+      resolvers.Mutation.updatePost({}, { id: 'ghost', input: {} }, authCtx()),
+    ).rejects.toThrow('NOT_FOUND');
+    expect(prisma.post.update).not.toHaveBeenCalled();
+  });
+
+  it('throws FORBIDDEN when the caller is not a member of the post’s org', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-2' });
+    prisma.organizationMember.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      resolvers.Mutation.updatePost({}, { id: 'post-1', input: { content: 'x' } }, authCtx('user-1')),
+    ).rejects.toThrow('FORBIDDEN');
+    expect(prisma.post.update).not.toHaveBeenCalled();
   });
 });
 
@@ -381,6 +434,7 @@ describe('Mutation.updatePost', () => {
 
 describe('Mutation.deletePost', () => {
   it('deletes the post and returns true', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-1' });
     prisma.post.delete.mockResolvedValue({});
 
     const result = await resolvers.Mutation.deletePost({}, { id: 'post-1' }, authCtx());
@@ -390,6 +444,7 @@ describe('Mutation.deletePost', () => {
   });
 
   it('propagates service-layer errors (error propagation)', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-1' });
     prisma.post.delete.mockRejectedValue(new Error('Cannot delete a published post'));
 
     await expect(
@@ -402,6 +457,25 @@ describe('Mutation.deletePost', () => {
       resolvers.Mutation.deletePost({}, { id: 'post-1' }, noAuthCtx),
     ).rejects.toThrow('UNAUTHENTICATED');
 
+    expect(prisma.post.delete).not.toHaveBeenCalled();
+  });
+
+  it('throws NOT_FOUND when the post does not exist', async () => {
+    prisma.post.findUnique.mockResolvedValue(null);
+
+    await expect(
+      resolvers.Mutation.deletePost({}, { id: 'ghost' }, authCtx()),
+    ).rejects.toThrow('NOT_FOUND');
+    expect(prisma.post.delete).not.toHaveBeenCalled();
+  });
+
+  it('throws FORBIDDEN when the caller is not a member of the post’s org', async () => {
+    prisma.post.findUnique.mockResolvedValue({ organizationId: 'org-2' });
+    prisma.organizationMember.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      resolvers.Mutation.deletePost({}, { id: 'post-1' }, authCtx('user-1')),
+    ).rejects.toThrow('FORBIDDEN');
     expect(prisma.post.delete).not.toHaveBeenCalled();
   });
 });

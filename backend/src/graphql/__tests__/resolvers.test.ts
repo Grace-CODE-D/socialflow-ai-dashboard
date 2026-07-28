@@ -19,6 +19,7 @@ jest.mock('../../lib/prisma', () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    organizationMember: { findUnique: jest.fn() },
   },
 }));
 
@@ -70,7 +71,7 @@ describe('Subscription.orgUpdate – org membership validation', () => {
   it('throws FORBIDDEN when the subscriber belongs to a different org', async () => {
     mockIsBlacklisted.mockResolvedValue(false);
     const { prisma } = require('../../lib/prisma');
-    prisma.user.findUnique.mockResolvedValue({ organizationId: 'org-a' });
+    prisma.organizationMember.findUnique.mockResolvedValue(null);
 
     const ctx = { userId: 'user-1', tokenKey: 'jti-abc' };
     await expect(
@@ -81,7 +82,7 @@ describe('Subscription.orgUpdate – org membership validation', () => {
   it('resolves the iterator when the subscriber belongs to the requested org', async () => {
     mockIsBlacklisted.mockResolvedValue(false);
     const { prisma } = require('../../lib/prisma');
-    prisma.user.findUnique.mockResolvedValue({ organizationId: 'org-a' });
+    prisma.organizationMember.findUnique.mockResolvedValue({ organizationId: 'org-a' });
 
     const ctx = { userId: 'user-1', tokenKey: 'jti-abc' };
     // Should not throw — returns an async iterator
