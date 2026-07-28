@@ -19,6 +19,8 @@ export class WalletService {
   private wallet: WalletInfo | null = null;
   private disconnectListeners: Set<DisconnectListener> = new Set();
   private isListeningForDisconnect = false;
+  /** Bound reference to the visibilitychange handler — stored so we can removeEventListener later */
+  private boundVisibilityHandler: (() => void) | null = null;
 
   /**
    * Auto-connect to available wallet
@@ -71,12 +73,15 @@ export class WalletService {
       });
     }
 
-    // Listen for visibility changes (user may switch wallets)
-    window.addEventListener('visibilitychange', () => {
+    // Store the bound handler so it can be removed in disconnect()
+    this.boundVisibilityHandler = () => {
       if (document.hidden === false) {
         this.checkWalletConnection();
       }
-    });
+    };
+
+    // Listen for visibility changes (user may switch wallets)
+    window.addEventListener('visibilitychange', this.boundVisibilityHandler);
   }
 
   /**
@@ -110,6 +115,13 @@ export class WalletService {
 
     this.wallet = null;
     this.disconnectListeners.forEach(listener => listener(event));
+    
+    // Remove the visibilitychange listener to prevent leaks
+    if (this.boundVisibilityHandler) {
+      window.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
+    this.isListeningForDisconnect = false;
   }
 
   /**
@@ -159,6 +171,11 @@ export class WalletService {
    * Disconnect wallet
    */
   disconnect(): void {
+    // Remove the visibilitychange listener to prevent leaks
+    if (this.boundVisibilityHandler) {
+      window.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
     this.wallet = null;
     this.isListeningForDisconnect = false;
   }

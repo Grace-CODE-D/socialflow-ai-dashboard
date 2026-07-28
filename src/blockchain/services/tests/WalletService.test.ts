@@ -127,4 +127,105 @@ describe('WalletService', () => {
       expect(() => unsub()).not.toThrow();
     });
   });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // #1249: visibilitychange listener leak prevention
+  // ═════════════════════════════════════════════════════════════════════════
+
+  describe('visibilitychange listener cleanup (#1249)', () => {
+    let addEventListenerSpy: jest.SpyInstance;
+    let removeEventListenerSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      addEventListenerSpy = jest.spyOn(window, 'addEventListener');
+      removeEventListenerSpy = jest.spyOn(window, 'removeEventListener');
+    });
+
+    afterEach(() => {
+      addEventListenerSpy.mockRestore();
+      removeEventListenerSpy.mockRestore();
+    });
+
+    it('adds visibilitychange listener exactly once on connect', async () => {
+      setupFreighter('GVISIBILITY');
+      const svc = new WalletService();
+
+      await svc.autoConnect();
+
+      const calls = addEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+      expect(calls).toHaveLength(1);
+    });
+
+    it('does not add duplicate listener on second autoConnect call', async () => {
+      setupFreighter('GVISIBILITY2');
+      const svc = new WalletService();
+
+      await svc.autoConnect();
+      await svc.autoConnect(); // second call
+
+      const calls = addEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+      expect(calls).toHaveLength(1);
+    });
+
+    it('removes visibilitychange listener on disconnect()', async () => {
+      setupFreighter('GDISCONNECTLISTENER');
+      const svc = new WalletService();
+
+      await svc.autoConnect();
+      svc.disconnect();
+
+      const removeCalls = removeEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+      expect(removeCalls).toHaveLength(1);
+    });
+
+    it('removes and re-adds listener on disconnect then reconnect cycle', async () => {
+      setupFreighter('GRECONNECT');
+      const svc = new WalletService();
+
+      await svc.autoConnect();
+      svc.disconnect();
+      await svc.autoConnect();
+
+      const addCalls = addEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+      const removeCalls = removeEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+
+      // Should be 2 adds (initial connect + reconnect) and 1 remove (disconnect)
+      expect(addCalls).toHaveLength(2);
+      expect(removeCalls).toHaveLength(1);
+    });
+
+    it('prevents listener leak across multiple connect/disconnect cycles', async () => {
+      setupFreighter('GMULTIPLE');
+      const svc = new WalletService();
+
+      // Multiple cycles
+      await svc.autoConnect();
+      svc.disconnect();
+      await svc.autoConnect();
+      svc.disconnect();
+      await svc.autoConnect();
+      svc.disconnect();
+
+      const addCalls = addEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+      const removeCalls = removeEventListenerSpy.mock.calls.filter(
+        (call) => call[0] === 'visibilitychange'
+      );
+
+      // 3 connects = 3 adds, 3 disconnects = 3 removes
+      expect(addCalls).toHaveLength(3);
+      expect(removeCalls).toHaveLength(3);
+    });
+  });
 });

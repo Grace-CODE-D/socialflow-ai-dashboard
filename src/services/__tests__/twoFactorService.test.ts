@@ -1,35 +1,90 @@
 /**
- * @jest-environment node
+ * @jest-environment jsdom
  *
  * Tests for twoFactorService
  * Feature: totp-two-factor-auth
  */
 
 import * as fc from 'fast-check';
-import crypto from 'crypto';
 
-// ── Mock Electron safeStorage IPC ────────────────────────────────────────────
+// ── Mock WebCrypto ────────────────────────────────────────────────────────────
 
-const mockEncryptString = jest.fn(async (plain: string) =>
-  Buffer.from(plain).toString('base64')
-);
-const mockDecryptString = jest.fn(async (cipher: string) =>
-  Buffer.from(cipher, 'base64').toString('utf8')
-);
+const mockGetRandomValues = jest.fn((array: Uint8Array) => {
+  for (let i = 0; i < array.length; i++) {
+    array[i] = Math.floor(Math.random() * 256);
+  }
+  return array;
+});
+
+const mockSubtle = {
+  importKey: jest.fn(async () => ({ type: 'secret' })),
+  deriveKey: jest.fn(async () => ({ type: 'secret' })),
+  deriveBits: jest.fn(async (algorithm, key, length) => {
+    // Simple mock that generates deterministic output
+    const bytes = new Uint8Array(length / 8);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = i % 256;
+    }
+    return bytes.buffer;
+  }),
+  encrypt: jest.fn(async (algorithm, key, data) => {
+    // Simple mock encryption (just returns the data with a prefix)
+    const prefix = new Uint8Array([0xAA, 0xBB]); // auth tag mock
+    const result = new Uint8Array(prefix.length + data.byteLength);
+    result.set(prefix, 0);
+    result.set(new Uint8Array(data), prefix.length);
+    return result.buffer;
+  }),
+  decrypt: jest.fn(async (algorithm, key, data) => {
+    // Simple mock decryption (just removes the prefix)
+    const dataArray = new Uint8Array(data);
+    return dataArray.slice(2).buffer; // remove 2-byte prefix
+  }),
+};
 
 Object.defineProperty(global, 'window', {
   value: {
-    electronAPI: {
-      encryptString: mockEncryptString,
-      decryptString: mockDecryptString,
+    crypto: {
+      subtle: mockSubtle,
+      getRandomValues: mockGetRandomValues,
     },
   },
   writable: true,
 });
 
-// ── Mock localStorage ────────────────────────────────────────────────────────
+Object.defineProperty(global, 'btoa', {
+  value: (str: string) => Buffer.from(str, 'binary').toString('base64'),
+  writable: true,
+});
+
+Object.defineProperty(global, 'atob', {
+  value: (str: string) => Buffer.from(str, 'base64').toString('binary'),
+  writable: true,
+});
+
+Object.defineProperty(global, 'TextEncoder', {
+  value: class TextEncoder {
+    encode(str: string) {
+      return Buffer.from(str, 'utf8');
+    }
+  },
+  writable: true,
+});
+
+Object.defineProperty(global, 'TextDecoder', {
+  value: class TextDecoder {
+    decode(buffer: ArrayBuffer) {
+      return Buffer.from(buffer).toString('utf8');
+    }
+  },
+  writable: true,
+});
+
+// ── Mock localStorage and sessionStorage ─────────────────────────────────────
 
 const lsStore: Record<string, string> = {};
+const ssStore: Record<string, string> = {};
+
 Object.defineProperty(global, 'localStorage', {
   value: {
     getItem: (k: string) => lsStore[k] ?? null,
@@ -40,12 +95,23 @@ Object.defineProperty(global, 'localStorage', {
   writable: true,
 });
 
+Object.defineProperty(global, 'sessionStorage', {
+  value: {
+    getItem: (k: string) => ssStore[k] ?? null,
+    setItem: (k: string, v: string) => { ssStore[k] = v; },
+    removeItem: (k: string) => { delete ssStore[k]; },
+    clear: () => { Object.keys(ssStore).forEach(k => delete ssStore[k]); },
+  },
+  writable: true,
+});
+
 // ── Import service after mocks ────────────────────────────────────────────────
 
 import { twoFactorService } from '../../services/twoFactorService';
 
 // ── TOTP token generator (pure Node.js, no otplib) ───────────────────────────
 // RFC 6238 / RFC 4226 implementation for test use only
+import crypto from 'crypto';
 
 function base32DecodeBytes(encoded: string): Buffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -80,9 +146,30 @@ function generateTotpToken(secret: string, timeStep?: number): string {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   twoFactorService.resetFailedAttempts();
-  mockEncryptString.mockClear();
-  mockDecryptString.mockClear();
+  jest.clearAllMocks();
+  // Re-assign mockSubtle methods after clearAllMocks
+  mockSubtle.importKey.mockImplementation(async () => ({ type: 'secret' }));
+  mockSubtle.deriveKey.mockImplementation(async () => ({ type: 'secret' }));
+  mockSubtle.deriveBits.mockImplementation(async (algorithm: any, key: any, length: number) => {
+    const bytes = new Uint8Array(length / 8);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+    return bytes.buffer;
+  });
+  mockSubtle.encrypt.mockImplementation(async (algorithm: any, key: any, data: ArrayBuffer) => {
+    const prefix = new Uint8Array([0xAA, 0xBB]);
+    const result = new Uint8Array(prefix.length + data.byteLength);
+    result.set(prefix, 0);
+    result.set(new Uint8Array(data), prefix.length);
+    return result.buffer;
+  });
+  mockSubtle.decrypt.mockImplementation(async (algorithm: any, key: any, data: ArrayBuffer) => {
+    const dataArray = new Uint8Array(data);
+    return dataArray.slice(2).buffer;
+  });
+  // Reset twoFactorService pluggable store
+  twoFactorService._lockoutStore = null;
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -189,24 +276,24 @@ describe('Property-based tests', () => {
     }), { numRuns: 3 });
   }, 120_000);
 
-  test('Property 10: Failed attempt counter increments on invalid token', () => {
+  test('Property 10: Failed attempt counter increments on invalid token', async () => {
     // Feature: totp-two-factor-auth, Property 10: Failed attempt counter increments on invalid token
-    fc.assert(fc.property(fc.integer({ min: 1, max: 4 }), (n) => {
+    await fc.assert(fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (n) => {
       twoFactorService.resetFailedAttempts();
       for (let i = 0; i < n; i++) twoFactorService.recordFailedAttempt();
-      const notLockedYet = !twoFactorService.isLockedOut();
+      const notLockedYet = !await twoFactorService.isLockedOut();
       twoFactorService.resetFailedAttempts();
       return notLockedYet;
     }), { numRuns: 100 });
   });
 
-  test('Property 11: Lockout activates after 5 failures', () => {
+  test('Property 11: Lockout activates after 5 failures', async () => {
     // Feature: totp-two-factor-auth, Property 11: Lockout activates after 5 failures
-    fc.assert(fc.property(fc.constant(null), () => {
+    await fc.assert(fc.asyncProperty(fc.constant(null), async () => {
       twoFactorService.resetFailedAttempts();
       for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
-      const locked = twoFactorService.isLockedOut();
-      const remaining = twoFactorService.getLockoutRemainingMs();
+      const locked = await twoFactorService.isLockedOut();
+      const remaining = await twoFactorService.getLockoutRemainingMs();
       twoFactorService.resetFailedAttempts();
       return locked && remaining > 290_000 && remaining <= 300_000;
     }), { numRuns: 100 });
@@ -308,24 +395,24 @@ describe('Unit tests', () => {
     expect(await twoFactorService.getRemainingRecoveryCodeCount()).toBe(7);
   });
 
-  test('isLockedOut returns false initially', () => {
-    expect(twoFactorService.isLockedOut()).toBe(false);
+  test('isLockedOut returns false initially', async () => {
+    expect(await twoFactorService.isLockedOut()).toBe(false);
   });
 
-  test('isLockedOut returns true after 5 failed attempts', () => {
+  test('isLockedOut returns true after 5 failed attempts', async () => {
     for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
-    expect(twoFactorService.isLockedOut()).toBe(true);
+    expect(await twoFactorService.isLockedOut()).toBe(true);
   });
 
-  test('getLockoutRemainingMs is ~300000 immediately after lockout', () => {
+  test('getLockoutRemainingMs is ~300000 immediately after lockout', async () => {
     for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
-    expect(twoFactorService.getLockoutRemainingMs()).toBeGreaterThan(299_000);
+    expect(await twoFactorService.getLockoutRemainingMs()).toBeGreaterThan(299_000);
   });
 
-  test('resetFailedAttempts clears lockout', () => {
+  test('resetFailedAttempts clears lockout', async () => {
     for (let i = 0; i < 5; i++) twoFactorService.recordFailedAttempt();
     twoFactorService.resetFailedAttempts();
-    expect(twoFactorService.isLockedOut()).toBe(false);
+    expect(await twoFactorService.isLockedOut()).toBe(false);
   });
 
   test('verifyStoredToken returns false when 2FA is disabled', async () => {
@@ -359,6 +446,129 @@ describe('Unit tests', () => {
     for (const code of codes) {
       expect(raw).not.toContain(code);
     }
+  });
+
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Pluggable lockout store tests (#1247)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('Pluggable lockout store (#1247)', () => {
+
+  afterEach(() => {
+    // Reset pluggable store after each test in this suite
+    twoFactorService._lockoutStore = null;
+    twoFactorService.resetFailedAttempts();
+  });
+
+  test('isLockedOut delegates to pluggable store when userId is provided', async () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(180_000),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+
+    const result = await twoFactorService.isLockedOut('user-123');
+
+    expect(result).toBe(true);
+    expect(mockStore.isLockedOut).toHaveBeenCalledWith('user-123');
+  });
+
+  test('isLockedOut returns false via store when store says not locked', async () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+
+    const result = await twoFactorService.isLockedOut('user-456');
+
+    expect(result).toBe(false);
+    expect(mockStore.isLockedOut).toHaveBeenCalledWith('user-456');
+  });
+
+  test('getLockoutRemainingMs delegates to pluggable store when userId is provided', async () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(240_000),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+
+    const remaining = await twoFactorService.getLockoutRemainingMs('user-789');
+
+    expect(remaining).toBe(240_000);
+    expect(mockStore.getLockoutRemainingMs).toHaveBeenCalledWith('user-789');
+  });
+
+  test('isLockedOut falls back to in-memory state when no userId is provided', async () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(999_999),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+
+    // No userId — must use in-memory, NOT the pluggable store
+    const result = await twoFactorService.isLockedOut();
+
+    expect(result).toBe(false); // in-memory has no lockout
+    expect(mockStore.isLockedOut).not.toHaveBeenCalled();
+  });
+
+  test('pluggable store lockout is not bypassed — in-memory failures do not affect store result', async () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(60_000),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+
+    // Even if in-memory has 0 failures, store says locked
+    const result = await twoFactorService.isLockedOut('user-abc');
+    expect(result).toBe(true);
+    expect(mockStore.isLockedOut).toHaveBeenCalledTimes(1);
+  });
+
+  test('recordFailedAttempt delegates to pluggable store when userId is provided', () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+    twoFactorService.recordFailedAttempt('user-xyz');
+
+    expect(mockStore.recordFailedAttempt).toHaveBeenCalledWith('user-xyz');
+  });
+
+  test('resetFailedAttempts delegates to pluggable store when userId is provided', () => {
+    const mockStore = {
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      isLockedOut: jest.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
+      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+    };
+
+    twoFactorService.setLockoutStore(mockStore);
+    twoFactorService.resetFailedAttempts('user-xyz');
+
+    expect(mockStore.resetFailedAttempts).toHaveBeenCalledWith('user-xyz');
   });
 
 });
