@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { createLogger } from '../lib/logger';
 import { webhookDispatchFailed } from '../lib/metrics';
 import { WebhookEventType } from '../schemas/webhooks';
+import { decryptWebhookSecret } from '../lib/webhookSecretCrypto';
 
 const logger = createLogger('WebhookDispatcher');
 
@@ -96,6 +97,31 @@ function sign(secret: string, body: string): string {
 }
 
 /**
+ * Decrypt a subscription's stored (encrypted) signing secret. If decryption
+ * fails — e.g. the encryption key was rotated — the delivery is marked
+ * failed instead of throwing, so a single bad secret can't crash the
+ * fire-and-forget dispatch/retry loops.
+ */
+export async function resolveSigningSecret(
+  deliveryId: string,
+  encryptedSecret: string,
+): Promise<string | null> {
+  try {
+    return decryptWebhookSecret(encryptedSecret);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error(`Delivery ${deliveryId} blocked — could not decrypt signing secret`, {
+      errorMessage,
+    });
+    await prisma.webhookDelivery.update({
+      where: { id: deliveryId },
+      data: { status: 'failed', nextRetryAt: null, errorMessage: 'Unable to decrypt webhook secret' },
+    });
+    return null;
+  }
+}
+
+/**
  * Dispatch a webhook event to all active subscribers for that event type.
  * Each delivery is persisted so retries survive restarts.
  */
@@ -131,8 +157,11 @@ export async function dispatchEvent(
           status: 'pending',
         },
       });
+      const secret = await resolveSigningSecret(delivery.id, sub.secret);
+      if (secret === null) return;
+
       // Fire-and-forget; errors are caught and persisted inside
-      attemptDelivery(delivery.id, sub.url, sub.secret, payload, 1).catch((err) => {
+      attemptDelivery(delivery.id, sub.url, secret, payload, 1).catch((err) => {
         logger.error('Unexpected error in fire-and-forget delivery', {
           deliveryId: delivery.id,
           subscriptionId: sub.id,
@@ -256,21 +285,20 @@ export async function retryPendingDeliveries(): Promise<void> {
   logger.info(`Retrying ${due.length} pending deliveries`);
 
   await Promise.all(
-    due.map((d) =>
-      attemptDelivery(
-        d.id,
-        d.subscription.url,
-        d.subscription.secret,
-        d.payload,
-        d.attempts + 1,
-      ).catch((err) => {
-        logger.error('Unexpected error in fire-and-forget retry delivery', {
-          deliveryId: d.id,
-          subscriptionId: d.subscription.id,
-          err,
-        });
-        webhookDispatchFailed.inc({ subscription_id: d.subscription.id });
-      }),
-    ),
+    due.map(async (d) => {
+      const secret = await resolveSigningSecret(d.id, d.subscription.secret);
+      if (secret === null) return;
+
+      await attemptDelivery(d.id, d.subscription.url, secret, d.payload, d.attempts + 1).catch(
+        (err) => {
+          logger.error('Unexpected error in fire-and-forget retry delivery', {
+            deliveryId: d.id,
+            subscriptionId: d.subscription.id,
+            err,
+          });
+          webhookDispatchFailed.inc({ subscription_id: d.subscription.id });
+        },
+      );
+    }),
   );
 }

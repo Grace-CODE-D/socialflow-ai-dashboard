@@ -60,7 +60,6 @@ import { rawBodyMiddleware, verifySignature } from '../middleware/verifySignatur
 const USER_ID = 'user-abc';
 const SUB_ID = 'sub-001';
 const SECRET = 'my-test-secret-value';
-const HASHED_SECRET = crypto.createHash('sha256').update(SECRET).digest('hex');
 
 function authApp(handler: (req: any, res: Response, next: NextFunction) => any) {
   const app = express();
@@ -223,12 +222,34 @@ describe('createWebhook', () => {
     expect(res.status).toBe(201);
     // Raw secret returned once
     expect(res.body.secret).toBe('at-least-16-chars!');
-    // Stored secret is hashed
+    // Stored secret is encrypted, not stored in plaintext
     expect(mockPrisma.webhookSubscription.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ secret: expect.not.stringContaining('at-least-16-chars!') }),
       }),
     );
+  });
+
+  it('stores the secret reversibly — it decrypts back to the exact raw value shown to the user', async () => {
+    const created = {
+      id: SUB_ID,
+      url: 'https://example.com/hook',
+      events: ['post.published'],
+      isActive: true,
+      createdAt: new Date(),
+    };
+    mockPrisma.webhookSubscription.create.mockResolvedValue(created);
+
+    const app = authApp(createWebhook as any);
+    await request(app).post('/').send({
+      url: 'https://example.com/hook',
+      secret: 'at-least-16-chars!',
+      events: ['post.published'],
+    });
+
+    const storedSecret = mockPrisma.webhookSubscription.create.mock.calls[0][0].data.secret;
+    const { decryptWebhookSecret } = jest.requireActual('../lib/webhookSecretCrypto');
+    expect(decryptWebhookSecret(storedSecret)).toBe('at-least-16-chars!');
   });
 
   it('rejects a webhook URL resolving to a private/metadata address (SSRF)', async () => {

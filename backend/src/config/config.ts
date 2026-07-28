@@ -34,6 +34,17 @@ const envSchema = z.object({
     .min(JWT_SECRET_MIN_LENGTH, `JWT_REFRESH_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters`),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
+  // ── Webhook secret encryption ────────────────────────────────────────────
+  // 32-byte (64 hex char) AES-256-GCM key used to reversibly encrypt webhook
+  // signing secrets at rest, so the original value can be recovered to sign
+  // outbound deliveries and verify inbound requests.
+  WEBHOOK_SECRET_ENCRYPTION_KEY: z
+    .string()
+    .regex(
+      /^[0-9a-fA-F]{64}$/,
+      'WEBHOOK_SECRET_ENCRYPTION_KEY must be a 64-character hex string (32 bytes) for AES-256-GCM',
+    ),
+
   // ── Redis ─────────────────────────────────────────────────────────────────
   REDIS_HOST: z.string().default('127.0.0.1'),
   REDIS_PORT: z.coerce.number().int().positive().default(6379),

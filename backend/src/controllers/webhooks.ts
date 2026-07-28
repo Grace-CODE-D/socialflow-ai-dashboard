@@ -1,10 +1,10 @@
 import { Response, NextFunction } from 'express';
-import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { createLogger } from '../lib/logger';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../lib/errors';
 import { dispatchEvent, assertSafeUrl } from '../services/WebhookDispatcher';
+import { encryptWebhookSecret } from '../lib/webhookSecretCrypto';
 import { CreateWebhookInput, UpdateWebhookInput } from '../schemas/webhooks';
 import { parsePageLimit, toSkipTake, buildPageResponse } from '../utils/pagination';
 
@@ -49,11 +49,13 @@ export async function createWebhook(req: AuthRequest, res: Response, next: NextF
     } catch (err) {
       throw new BadRequestError(err instanceof Error ? err.message : 'Invalid webhook URL');
     }
-    // Store a hashed secret — never return the raw value after creation
-    const hashedSecret = crypto.createHash('sha256').update(secret).digest('hex');
+    // Store the secret encrypted (reversibly) — never return the raw value
+    // after creation, but keep it recoverable so it can be used as the
+    // actual HMAC signing key for outbound/inbound webhook verification.
+    const encryptedSecret = encryptWebhookSecret(secret);
 
     const sub = await prisma.webhookSubscription.create({
-      data: { userId: req.user!.id, url, secret: hashedSecret, events },
+      data: { userId: req.user!.id, url, secret: encryptedSecret, events },
       select: { id: true, url: true, events: true, isActive: true, createdAt: true },
     });
 
@@ -100,7 +102,7 @@ export async function updateWebhook(req: AuthRequest, res: Response, next: NextF
     if (body.events !== undefined) data.events = body.events;
     if (body.isActive !== undefined) data.isActive = body.isActive;
     if (body.secret !== undefined) {
-      data.secret = crypto.createHash('sha256').update(body.secret).digest('hex');
+      data.secret = encryptWebhookSecret(body.secret);
     }
 
     const updated = await prisma.webhookSubscription.update({

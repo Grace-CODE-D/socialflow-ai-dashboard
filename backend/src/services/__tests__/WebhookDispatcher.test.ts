@@ -1,4 +1,5 @@
 import { attemptDelivery, assertSafeUrl, dispatchEvent, retryPendingDeliveries } from '../WebhookDispatcher';
+import { encryptWebhookSecret } from '../../lib/webhookSecretCrypto';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,9 @@ const { prisma } = jest.requireMock('../../lib/prisma') as {
 const DELIVERY_ID = 'del-1';
 const URL = 'https://example.com/hook';
 const SECRET = 'secret';
+// Subscriptions read from prisma store the secret encrypted; attemptDelivery
+// itself still takes the raw secret directly (used by tests below).
+const ENCRYPTED_SECRET = encryptWebhookSecret(SECRET);
 const PAYLOAD = JSON.stringify({ id: 'evt-1', version: '1.0', event: 'post.published' });
 
 function mockFetch(ok: boolean, status = ok ? 200 : 500) {
@@ -112,7 +116,7 @@ describe('attemptDelivery', () => {
 describe('dispatchEvent', () => {
   it('creates a delivery row per active subscriber and fires delivery', async () => {
     prisma.webhookSubscription.findMany.mockResolvedValue([
-      { id: 'sub-1', url: URL, secret: SECRET },
+      { id: 'sub-1', url: URL, secret: ENCRYPTED_SECRET },
     ]);
     prisma.webhookDelivery.create.mockResolvedValue({ id: DELIVERY_ID });
     mockFetch(true);
@@ -143,7 +147,7 @@ describe('dispatchEvent', () => {
     const loggerInstance = createLogger();
 
     prisma.webhookSubscription.findMany.mockResolvedValue([
-      { id: 'sub-2', url: URL, secret: SECRET },
+      { id: 'sub-2', url: URL, secret: ENCRYPTED_SECRET },
     ]);
     prisma.webhookDelivery.create.mockResolvedValue({ id: 'del-2' });
     // Make fetch throw so attemptDelivery itself throws past its own try/catch
@@ -162,6 +166,35 @@ describe('dispatchEvent', () => {
       expect.stringContaining('fire-and-forget'),
       expect.objectContaining({ deliveryId: 'del-2', subscriptionId: 'sub-2' }),
     );
+  });
+
+  it('signs the outbound delivery with the decrypted raw secret, not the stored ciphertext', async () => {
+    const crypto = require('crypto');
+
+    prisma.webhookSubscription.findMany.mockResolvedValue([
+      { id: 'sub-3', url: URL, secret: ENCRYPTED_SECRET },
+    ]);
+    prisma.webhookDelivery.create.mockResolvedValue({ id: 'del-3' });
+    mockFetch(true);
+    prisma.webhookDelivery.update.mockResolvedValue({});
+
+    await dispatchEvent('post.published' as any, { postId: '1' });
+    for (let i = 0; i < 50 && (global.fetch as jest.Mock).mock.calls.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const [, options] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    const actualBody = (
+      prisma.webhookDelivery.create.mock.calls[0][0] as { data: { payload: string } }
+    ).data.payload;
+    const expected =
+      'sha256=' + crypto.createHmac('sha256', SECRET).update(actualBody).digest('hex');
+
+    expect((options.headers as Record<string, string>)['X-SocialFlow-Signature']).toBe(expected);
+    // Sanity check: signing with the raw stored ciphertext would NOT match.
+    const wrongSig =
+      'sha256=' + crypto.createHmac('sha256', ENCRYPTED_SECRET).update(actualBody).digest('hex');
+    expect((options.headers as Record<string, string>)['X-SocialFlow-Signature']).not.toBe(wrongSig);
   });
 });
 
@@ -226,7 +259,7 @@ describe('retryPendingDeliveries', () => {
         id: DELIVERY_ID,
         payload: PAYLOAD,
         attempts: 1,
-        subscription: { url: URL, secret: SECRET },
+        subscription: { url: URL, secret: ENCRYPTED_SECRET },
       },
     ]);
     mockFetch(true);
