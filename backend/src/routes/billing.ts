@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate';
 import { billingService } from '../services/BillingService';
 import { UserStore } from '../models/User';
 import { createLogger } from '../lib/logger';
+import { allowedOrigins } from '../config/cors';
 
 const router = Router();
 const logger = createLogger('billing-routes');
@@ -18,6 +19,35 @@ const checkoutSchema = z.object({
 const portalSchema = z.object({
   returnUrl: z.string().url(),
 });
+
+/**
+ * Redirect URLs handed to Stripe (success_url/cancel_url/return_url) must
+ * resolve to an origin we control. Without this, an attacker can point
+ * successUrl at an external phishing domain and Stripe will redirect the
+ * payer there immediately after a real payment completes (open redirect).
+ */
+function isAllowedRedirectUrl(url: string): boolean {
+  try {
+    return allowedOrigins.includes(new URL(url).origin);
+  } catch {
+    return false;
+  }
+}
+
+function rejectDisallowedUrls(
+  urls: Record<string, string>,
+  res: Response,
+): boolean {
+  for (const [field, url] of Object.entries(urls)) {
+    if (!isAllowedRedirectUrl(url)) {
+      res.status(400).json({
+        message: `${field} must be a URL on an allowed application origin`,
+      });
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * @openapi
@@ -128,6 +158,7 @@ router.post(
   validate(checkoutSchema),
   async (req: AuthRequest, res: Response) => {
     const { priceId, successUrl, cancelUrl } = req.body;
+    if (rejectDisallowedUrls({ successUrl, cancelUrl }, res)) return;
     try {
       const url = await billingService.createCheckoutSession(
         req.user!.id,
@@ -178,6 +209,7 @@ router.post(
   validate(portalSchema),
   async (req: AuthRequest, res: Response) => {
     const { returnUrl } = req.body;
+    if (rejectDisallowedUrls({ returnUrl }, res)) return;
     try {
       const url = await billingService.createPortalSession(req.user!.id, returnUrl);
       return res.json({ url });

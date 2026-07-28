@@ -174,6 +174,40 @@ describe('addMember — member invitation flow', () => {
     expect(res.json).toHaveBeenCalledWith(created);
   });
 
+  // ── Privilege escalation guard ─────────────────────────────────────────────
+
+  it('returns 403 when an admin-role caller tries to add a member with role="owner"', async () => {
+    (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'admin' });
+
+    const req = makeReq({ orgId: 'org-1' }, { userId: 'new-user-id', role: 'owner' });
+    const res = makeRes();
+
+    await addMember(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Only an owner can grant the owner role' });
+    expect(prisma.organizationMember.create).not.toHaveBeenCalled();
+  });
+
+  it('allows an owner-role caller to add a member with role="owner"', async () => {
+    (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'owner' });
+    const created = { id: 'mbr-6', organizationId: 'org-1', userId: 'new-user-id', role: 'owner' };
+    (prisma.organizationMember.create as jest.Mock).mockResolvedValue(created);
+
+    const req = makeReq({ orgId: 'org-1' }, { userId: 'new-user-id', role: 'owner' });
+    const res = makeRes();
+
+    await addMember(req, res);
+
+    expect(prisma.organizationMember.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ role: 'owner' }),
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(created);
+  });
+
   it('invalidates the org cache and the invited user org-list cache after invitation', async () => {
     (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'owner' });
     (prisma.organizationMember.create as jest.Mock).mockResolvedValue({
@@ -260,6 +294,7 @@ describe('removeMember — member removal flow', () => {
 
   it('invalidates the org cache and the removed user org-list cache after removal', async () => {
     (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'owner' });
+    (prisma.organizationMember.count as jest.Mock).mockResolvedValue(2);
     (prisma.organizationMember.delete as jest.Mock).mockResolvedValue({});
 
     const req = makeReq({ orgId: 'org-1', userId: 'target-id' });
@@ -269,5 +304,52 @@ describe('removeMember — member removal flow', () => {
 
     expect(invalidateCachePattern).toHaveBeenCalledWith('org:org-1:*');
     expect(invalidateCachePattern).toHaveBeenCalledWith('org-list:target-id:*');
+  });
+
+  // ── Owner-removal safeguards ────────────────────────────────────────────────
+
+  it('returns 403 when trying to remove the sole owner of an organization', async () => {
+    (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'owner' });
+    (prisma.organizationMember.count as jest.Mock).mockResolvedValue(1);
+
+    const req = makeReq({ orgId: 'org-1', userId: 'owner-id' });
+    const res = makeRes();
+
+    await removeMember(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Cannot remove the last owner of an organization' });
+    expect(prisma.organizationMember.delete).not.toHaveBeenCalled();
+  });
+
+  it('allows removing an owner when another owner remains', async () => {
+    (prisma.organizationMember.findUnique as jest.Mock).mockResolvedValue({ role: 'owner' });
+    (prisma.organizationMember.count as jest.Mock).mockResolvedValue(2);
+    (prisma.organizationMember.delete as jest.Mock).mockResolvedValue({});
+
+    const req = makeReq({ orgId: 'org-1', userId: 'owner-id' });
+    const res = makeRes();
+
+    await removeMember(req, res);
+
+    expect(prisma.organizationMember.delete).toHaveBeenCalledWith({
+      where: { organizationId_userId: { organizationId: 'org-1', userId: 'owner-id' } },
+    });
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('returns 403 when an admin-role caller tries to remove an owner', async () => {
+    (prisma.organizationMember.findUnique as jest.Mock)
+      .mockResolvedValueOnce({ role: 'admin' }) // caller membership
+      .mockResolvedValueOnce({ role: 'owner' }); // target membership
+
+    const req = makeReq({ orgId: 'org-1', userId: 'owner-id' });
+    const res = makeRes();
+
+    await removeMember(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Only an owner can remove an owner' });
+    expect(prisma.organizationMember.delete).not.toHaveBeenCalled();
   });
 });

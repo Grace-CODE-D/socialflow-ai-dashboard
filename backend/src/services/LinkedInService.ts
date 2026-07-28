@@ -148,6 +148,40 @@ class LinkedInService {
   }
 
   /**
+   * Refresh an expired access token using the stored refresh token.
+   * LinkedIn refresh tokens are only issued when the openid+offline_access scopes are
+   * approved; if no refresh_token exists the caller must re-initiate OAuth.
+   */
+  public async refreshAccessToken(refreshToken: string): Promise<LinkedInTokens> {
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+    });
+
+    const response = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      throwIfRateLimited(response);
+      const err = await response.json();
+      throw new Error(`LinkedIn token refresh failed: ${JSON.stringify(err)}`);
+    }
+
+    const data = (await response.json()) as any;
+    logger.info('LinkedIn access token refreshed successfully');
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token ?? refreshToken,
+      expiresAt: Date.now() + (data.expires_in || 5183944) * 1000,
+    };
+  }
+
+  /**
    * Get the authenticated member's basic profile.
    * Returns a person URN usable as `authorUrn` in shareContent.
    */
