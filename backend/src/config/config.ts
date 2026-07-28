@@ -34,6 +34,11 @@ const envSchema = z.object({
     .min(JWT_SECRET_MIN_LENGTH, `JWT_REFRESH_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters`),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
+  // ── CSRF ──────────────────────────────────────────────────────────────────
+  CSRF_SECRET: z
+    .string()
+    .min(JWT_SECRET_MIN_LENGTH, `CSRF_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters`),
+
   // ── Redis ─────────────────────────────────────────────────────────────────
   REDIS_HOST: z.string().default('127.0.0.1'),
   REDIS_PORT: z.coerce.number().int().positive().default(6379),

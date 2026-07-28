@@ -10,10 +10,15 @@
  */
 
 // Set required env vars before any module is loaded
-process.env.JWT_SECRET = 'test-secret-csrf';
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-csrf';
+process.env.JWT_SECRET = 'test-secret-csrf-that-is-at-least-32-chars!!';
+process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-csrf-that-is-at-least-32-chars!!';
 process.env.JWT_EXPIRES_IN = '15m';
 process.env.JWT_REFRESH_EXPIRES_IN = '7d';
+process.env.CSRF_SECRET = 'test-csrf-secret-that-is-at-least-32-chars!!';
+process.env.STRIPE_SECRET_KEY = 'sk_test_csrf_suite';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+process.env.TWITTER_API_KEY = process.env.TWITTER_API_KEY || 'test-key';
+process.env.TWITTER_API_SECRET = process.env.TWITTER_API_SECRET || 'test-secret';
 
 import { Request, Response, NextFunction } from 'express';
 import { csrfProtection } from '../middleware/csrfProtection';
