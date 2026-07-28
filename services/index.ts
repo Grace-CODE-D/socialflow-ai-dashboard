@@ -79,11 +79,3 @@ export type {
 } from './EmailService';
 
 export { EMAIL_TEMPLATES } from './EmailService';
-
-// ============================================
-// Utility Exports
-// ============================================
-
-// Re-export commonly used services
-export { identityService } from './IndetificationService';
-export { blockchainService } from './BlockchainService';

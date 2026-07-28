@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './authMiddleware';
-import { billingService } from '../services/BillingService';
-import { CreditAction } from '../models/Subscription';
+import { billingService } from '../../services/BillingService';
+import { CreditAction } from '../../models/Subscription';
 
 /**
  * Middleware factory that deducts credits before allowing an action.
