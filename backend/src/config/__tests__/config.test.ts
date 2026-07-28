@@ -309,9 +309,9 @@ describe('validateEnv', () => {
     );
 
     // ── DATA_PRUNING_ENABLED boolean transform ──────────────────────────────
-    it('DATA_PRUNING_ENABLED defaults to true when absent', () => {
+    it('DATA_PRUNING_ENABLED defaults to false when absent', () => {
       const result = validateEnv(REQUIRED_ENV);
-      expect(result.DATA_PRUNING_ENABLED).toBe(true);
+      expect(result.DATA_PRUNING_ENABLED).toBe(false);
     });
 
     it.each(['true', '1'])('DATA_PRUNING_ENABLED "%s" enables pruning', (value) => {
