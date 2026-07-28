@@ -236,7 +236,9 @@ function validateEnv(env: NodeJS.ProcessEnv = process.env): Env {
   if (result.data.OTEL_EXPORTER === 'jaeger') {
     console.log(`[Telemetry Diagnostics] JAEGER_ENDPOINT=${result.data.JAEGER_ENDPOINT}`);
   } else if (result.data.OTEL_EXPORTER === 'otlp') {
-    console.log(`[Telemetry Diagnostics] OTEL_EXPORTER_OTLP_ENDPOINT=${result.data.OTEL_EXPORTER_OTLP_ENDPOINT}`);
+    console.log(
+      `[Telemetry Diagnostics] OTEL_EXPORTER_OTLP_ENDPOINT=${result.data.OTEL_EXPORTER_OTLP_ENDPOINT}`,
+    );
   } else if (result.data.OTEL_EXPORTER === 'honeycomb') {
     console.log(`[Telemetry Diagnostics] HONEYCOMB_DATASET=${result.data.HONEYCOMB_DATASET}`);
   }
@@ -246,7 +248,9 @@ function validateEnv(env: NodeJS.ProcessEnv = process.env): Env {
 
   // Warn if Slack webhook is not configured
   if (!result.data.SLACK_WEBHOOK_URL) {
-    console.warn('[Startup Warning] SLACK_WEBHOOK_URL is not set — health alerts will not be sent to Slack');
+    console.warn(
+      '[Startup Warning] SLACK_WEBHOOK_URL is not set — health alerts will not be sent to Slack',
+    );
   }
 
   // Warn if no TTS provider is configured
