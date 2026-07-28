@@ -1,5 +1,4 @@
 import { TOTP, NobleCryptoPlugin, ScureBase32Plugin } from 'otplib';
-import crypto from 'crypto';
 
 // ── Error types ──────────────────────────────────────────────────────────────
 
@@ -56,66 +55,267 @@ const LOCKOUT_DURATION_MS = 5 * 60 * 1000;
 const USER_STORE_KEY = 'sf_user_2fa';
 const RECOVERY_STORE_KEY = 'sf_recovery_codes';
 
-// ── IPC bridge (Electron safeStorage) ────────────────────────────────────────
+// ── WebCrypto helper for key derivation (browser-compatible) ─────────────────
 
-function getElectronAPI() {
-  const w = typeof window !== 'undefined' ? (window as any) : undefined;
-  if (!w?.electronAPI?.encryptString || !w?.electronAPI?.decryptString) {
-    throw new TwoFactorUnavailableError();
+async function getWebCrypto(): Promise<SubtleCrypto> {
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    return window.crypto.subtle;
   }
-  return w.electronAPI as {
-    encryptString(plain: string): Promise<string>;
-    decryptString(cipher: string): Promise<string>;
-  };
+  throw new TwoFactorUnavailableError();
 }
 
-// ── AES-256-GCM helpers ───────────────────────────────────────────────────────
-
-function aesEncrypt(plaintext: string, keyHex: string): string {
-  const key = Buffer.from(keyHex, 'hex');
-  const iv  = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const ct  = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, ct]).toString('base64');
+// Derive a master key from user's session (or a stable identifier)
+// In a real implementation, this should be derived from the user's auth session
+// For now, we'll use a stable key stored in sessionStorage (ephemeral per-session)
+async function deriveUserKey(): Promise<CryptoKey> {
+  const subtle = await getWebCrypto();
+  let keyMaterial = sessionStorage.getItem('sf_2fa_key_material');
+  
+  if (!keyMaterial) {
+    // Generate new key material for this session
+    const randomBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(randomBytes);
+    keyMaterial = Array.from(randomBytes, b => b.toString(16).padStart(2, '0')).join('');
+    sessionStorage.setItem('sf_2fa_key_material', keyMaterial);
+  }
+  
+  // Convert hex string to Uint8Array
+  const keyData = new Uint8Array(keyMaterial.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+  
+  // Import as raw key
+  return await subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
 }
 
-function aesDecrypt(blob: string, keyHex: string): string {
-  const buf = Buffer.from(blob, 'base64');
-  const iv  = buf.subarray(0, 12);
-  const tag = buf.subarray(12, 28);
-  const ct  = buf.subarray(28);
-  const key = Buffer.from(keyHex, 'hex');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+async function encryptString(plaintext: string): Promise<string> {
+  const subtle = await getWebCrypto();
+  const masterKey = await deriveUserKey();
+  
+  // Derive AES key from master key
+  const salt = new Uint8Array(16);
+  window.crypto.getRandomValues(salt);
+  
+  const aesKey = await subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    masterKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+  
+  const iv = new Uint8Array(12);
+  window.crypto.getRandomValues(iv);
+  
+  const encoder = new TextEncoder();
+  const ciphertext = await subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    encoder.encode(plaintext)
+  );
+  
+  // Combine salt + iv + ciphertext
+  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+  
+  // Return as base64
+  return btoa(String.fromCharCode(...combined));
 }
 
-// ── Recovery code hashing (scrypt) ───────────────────────────────────────────
-
-const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1, keylen: 32 } as const;
-
-function hashRecoveryCode(plainCode: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const salt = crypto.randomBytes(16);
-    crypto.scrypt(plainCode, salt, SCRYPT_PARAMS.keylen, { N: SCRYPT_PARAMS.N, r: SCRYPT_PARAMS.r, p: SCRYPT_PARAMS.p }, (err, derived) => {
-      if (err) return reject(err);
-      resolve(`${salt.toString('hex')}:${derived.toString('hex')}`);
-    });
-  });
+async function decryptString(encrypted: string): Promise<string> {
+  const subtle = await getWebCrypto();
+  const masterKey = await deriveUserKey();
+  
+  // Decode base64
+  const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+  
+  // Extract salt, iv, ciphertext
+  const salt = combined.slice(0, 16);
+  const iv = combined.slice(16, 28);
+  const ciphertext = combined.slice(28);
+  
+  // Derive same AES key
+  const aesKey = await subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    masterKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+  
+  const plaintext = await subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    ciphertext
+  );
+  
+  const decoder = new TextDecoder();
+  return decoder.decode(plaintext);
 }
 
-function checkRecoveryCode(plainCode: string, storedHash: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    const [saltHex, hashHex] = storedHash.split(':');
-    if (!saltHex || !hashHex) return resolve(false);
-    const salt = Buffer.from(saltHex, 'hex');
-    const expected = Buffer.from(hashHex, 'hex');
-    crypto.scrypt(plainCode, salt, SCRYPT_PARAMS.keylen, { N: SCRYPT_PARAMS.N, r: SCRYPT_PARAMS.r, p: SCRYPT_PARAMS.p }, (err, derived) => {
-      if (err) return reject(err);
-      resolve(derived.length === expected.length && crypto.timingSafeEqual(derived, expected));
-    });
-  });
+// ── AES-256-GCM helpers (WebCrypto) ──────────────────────────────────────────
+
+async function aesEncrypt(plaintext: string, keyHex: string): Promise<string> {
+  const subtle = await getWebCrypto();
+  
+  // Convert hex key to Uint8Array
+  const keyData = new Uint8Array(keyHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+  
+  // Import key
+  const key = await subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  
+  const iv = new Uint8Array(12);
+  window.crypto.getRandomValues(iv);
+  
+  const encoder = new TextEncoder();
+  const ciphertext = await subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoder.encode(plaintext)
+  );
+  
+  // Combine iv + ciphertext (tag is included in ciphertext by WebCrypto)
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function aesDecrypt(blob: string, keyHex: string): Promise<string> {
+  const subtle = await getWebCrypto();
+  
+  // Decode base64
+  const combined = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
+  
+  // Extract iv and ciphertext (WebCrypto includes auth tag in ciphertext)
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+  
+  // Convert hex key to Uint8Array
+  const keyData = new Uint8Array(keyHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+  
+  // Import key
+  const key = await subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'AES-GCM' },
+    false,
+    ['decrypt']
+  );
+  
+  const plaintext = await subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    ciphertext
+  );
+  
+  const decoder = new TextDecoder();
+  return decoder.decode(plaintext);
+}
+
+// ── Recovery code hashing (PBKDF2 via WebCrypto) ────────────────────────────
+
+const PBKDF2_ITERATIONS = 100000;
+
+async function hashRecoveryCode(plainCode: string): Promise<string> {
+  const subtle = await getWebCrypto();
+  const encoder = new TextEncoder();
+  
+  // Generate salt
+  const salt = new Uint8Array(16);
+  window.crypto.getRandomValues(salt);
+  
+  // Import password
+  const keyMaterial = await subtle.importKey(
+    'raw',
+    encoder.encode(plainCode),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  
+  // Derive hash
+  const derived = await subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256  // 32 bytes
+  );
+  
+  const saltHex = Array.from(salt, b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = Array.from(new Uint8Array(derived), b => b.toString(16).padStart(2, '0')).join('');
+  
+  return `${saltHex}:${hashHex}`;
+}
+
+async function checkRecoveryCode(plainCode: string, storedHash: string): Promise<boolean> {
+  const [saltHex, hashHex] = storedHash.split(':');
+  if (!saltHex || !hashHex) return false;
+  
+  const subtle = await getWebCrypto();
+  const encoder = new TextEncoder();
+  
+  // Parse salt
+  const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+  const expected = new Uint8Array(hashHex.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+  
+  // Import password
+  const keyMaterial = await subtle.importKey(
+    'raw',
+    encoder.encode(plainCode),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  
+  // Derive hash
+  const derived = await subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  
+  const derivedArray = new Uint8Array(derived);
+  
+  // Timing-safe comparison
+  if (derivedArray.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < derivedArray.length; i++) {
+    diff |= derivedArray[i] ^ expected[i];
+  }
+  return diff === 0;
 }
 
 // ── twoFactorService ──────────────────────────────────────────────────────────
@@ -158,9 +358,8 @@ export const twoFactorService = {
       const store = twoFactorService._readUserStore();
       if (!store?.twoFactorEnabled) return false;
 
-      const api = getElectronAPI();
-      const keyHex = await api.decryptString(store.encryptedKey);
-      const secret = aesDecrypt(store.encryptedSecret, keyHex);
+      const keyHex = await decryptString(store.encryptedKey);
+      const secret = await aesDecrypt(store.encryptedSecret, keyHex);
 
       // Replay attack prevention: reject token if already used in current window
       const now = Math.floor(Date.now() / 1000);
@@ -183,10 +382,13 @@ export const twoFactorService = {
   // ── Enable / disable ────────────────────────────────────────────────────────
 
   async enable(secret: string): Promise<void> {
-    const api = getElectronAPI();
-    const keyHex = crypto.randomBytes(32).toString('hex');
-    const encryptedKey = await api.encryptString(keyHex);
-    const encryptedSecret = aesEncrypt(secret, keyHex);
+    // Generate random AES key
+    const keyBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(keyBytes);
+    const keyHex = Array.from(keyBytes, b => b.toString(16).padStart(2, '0')).join('');
+    
+    const encryptedKey = await encryptString(keyHex);
+    const encryptedSecret = await aesEncrypt(secret, keyHex);
     const store: TwoFactorUserStore = { twoFactorEnabled: true, encryptedSecret, encryptedKey };
     localStorage.setItem(USER_STORE_KEY, JSON.stringify(store));
   },
@@ -212,33 +414,36 @@ export const twoFactorService = {
 
   generateRecoveryCodes(): string[] {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    return Array.from({ length: 8 }, () =>
-      Array.from(crypto.randomBytes(10))
+    return Array.from({ length: 8 }, () => {
+      const randomBytes = new Uint8Array(10);
+      window.crypto.getRandomValues(randomBytes);
+      return Array.from(randomBytes)
         .map(b => chars[b % chars.length])
-        .join('')
-    );
+        .join('');
+    });
   },
 
   async storeRecoveryCodes(plainCodes: string[]): Promise<void> {
-    const api = getElectronAPI();
-    const keyHex = crypto.randomBytes(32).toString('hex');
-    const encryptedKey = await api.encryptString(keyHex);
+    const keyBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(keyBytes);
+    const keyHex = Array.from(keyBytes, b => b.toString(16).padStart(2, '0')).join('');
+    
+    const encryptedKey = await encryptString(keyHex);
     const codes: RecoveryCodeEntry[] = await Promise.all(
       plainCodes.map(async code => ({ hash: await hashRecoveryCode(code), consumed: false }))
     );
-    const encryptedCodes = aesEncrypt(JSON.stringify({ codes } as RecoveryCodeData), keyHex);
+    const encryptedCodes = await aesEncrypt(JSON.stringify({ codes } as RecoveryCodeData), keyHex);
     const store: RecoveryCodeStore = { encryptedCodes, encryptedKey };
     localStorage.setItem(RECOVERY_STORE_KEY, JSON.stringify(store));
   },
 
   async verifyRecoveryCode(code: string): Promise<boolean> {
     try {
-      const api = getElectronAPI();
       const raw = localStorage.getItem(RECOVERY_STORE_KEY);
       if (!raw) return false;
       const store: RecoveryCodeStore = JSON.parse(raw);
-      const keyHex = await api.decryptString(store.encryptedKey);
-      const data: RecoveryCodeData = JSON.parse(aesDecrypt(store.encryptedCodes, keyHex));
+      const keyHex = await decryptString(store.encryptedKey);
+      const data: RecoveryCodeData = JSON.parse(await aesDecrypt(store.encryptedCodes, keyHex));
       // Find first unconsumed entry whose hash matches
       let matchedIndex = -1;
       for (let i = 0; i < data.codes.length; i++) {
@@ -250,7 +455,7 @@ export const twoFactorService = {
       }
       if (matchedIndex === -1) return false;
       data.codes[matchedIndex].consumed = true;
-      const newEncrypted = aesEncrypt(JSON.stringify(data), keyHex);
+      const newEncrypted = await aesEncrypt(JSON.stringify(data), keyHex);
       localStorage.setItem(RECOVERY_STORE_KEY, JSON.stringify({ encryptedCodes: newEncrypted, encryptedKey: store.encryptedKey }));
       return true;
     } catch {
@@ -266,12 +471,11 @@ export const twoFactorService = {
 
   async getRemainingRecoveryCodeCount(): Promise<number> {
     try {
-      const api = getElectronAPI();
       const raw = localStorage.getItem(RECOVERY_STORE_KEY);
       if (!raw) return 0;
       const store: RecoveryCodeStore = JSON.parse(raw);
-      const keyHex = await api.decryptString(store.encryptedKey);
-      const data: RecoveryCodeData = JSON.parse(aesDecrypt(store.encryptedCodes, keyHex));
+      const keyHex = await decryptString(store.encryptedKey);
+      const data: RecoveryCodeData = JSON.parse(await aesDecrypt(store.encryptedCodes, keyHex));
       return data.codes.filter(c => !c.consumed).length;
     } catch {
       return 0;
@@ -291,10 +495,9 @@ export const twoFactorService = {
     }
   },
 
-  isLockedOut(userId?: string): boolean {
+  async isLockedOut(userId?: string): Promise<boolean> {
     if (twoFactorService._lockoutStore && userId) {
-      // Synchronous callers fall back to in-memory; async callers should use the store directly
-      return false;
+      return await twoFactorService._lockoutStore.isLockedOut(userId);
     }
     if (rateLimitState.lockedUntil === null) return false;
     if (Date.now() >= rateLimitState.lockedUntil) {
@@ -305,9 +508,9 @@ export const twoFactorService = {
     return true;
   },
 
-  getLockoutRemainingMs(userId?: string): number {
+  async getLockoutRemainingMs(userId?: string): Promise<number> {
     if (twoFactorService._lockoutStore && userId) {
-      return 0; // async callers should use the store directly
+      return await twoFactorService._lockoutStore.getLockoutRemainingMs(userId);
     }
     if (rateLimitState.lockedUntil === null) return 0;
     return Math.max(0, rateLimitState.lockedUntil - Date.now());

@@ -65,68 +65,99 @@ export function useJobStream(token: string | null, options: UseJobStreamOptions 
 
     cleanupStream();
 
-    // EventSource doesn't support custom headers natively in browsers,
-    // so we pass the token as a query param (backend reads it as fallback).
-    const params = new URLSearchParams({ token });
-    if (lastEventId.current) params.set('lastEventId', lastEventId.current);
-    const es = new EventSource(`${baseUrl}/api/realtime/stream?${params.toString()}`);
-    esRef.current = es;
-
-    es.addEventListener('connected', () => {
-      if (!mountedRef.current) return;
-      setConnected(true);
-      setError(null);
-      retryCount.current = 0;
-      retryDelay.current = INITIAL_RETRY_DELAY_MS;
-    });
-
-    es.addEventListener('job_progress', (e: MessageEvent) => {
-      if (!mountedRef.current) return;
-      if (e.lastEventId) lastEventId.current = e.lastEventId;
+    // Fetch a short-lived SSE ticket before connecting
+    (async () => {
       try {
-        const event: JobProgressEvent = JSON.parse(e.data as string);
-        setJobs((prev: JobState) => ({ ...prev, [event.jobId]: event }));
-        onProgress?.(event);
-        if (event.status === 'failed') {
-          onJobFailed?.(event);
+        const ticketResponse = await fetch(`${baseUrl}/api/auth/sse-ticket`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!ticketResponse.ok) {
+          throw new Error(`Failed to obtain SSE ticket: ${ticketResponse.status}`);
         }
-      } catch {
-        // malformed event — ignore
+
+        const { ticket } = await ticketResponse.json();
+
+        if (!mountedRef.current) return;
+
+        // Use the short-lived ticket instead of the JWT
+        const params = new URLSearchParams({ ticket });
+        if (lastEventId.current) params.set('lastEventId', lastEventId.current);
+        const es = new EventSource(`${baseUrl}/api/realtime/stream?${params.toString()}`);
+        esRef.current = es;
+
+        es.addEventListener('connected', () => {
+          if (!mountedRef.current) return;
+          setConnected(true);
+          setError(null);
+          retryCount.current = 0;
+          retryDelay.current = INITIAL_RETRY_DELAY_MS;
+        });
+
+        es.addEventListener('job_progress', (e: MessageEvent) => {
+          if (!mountedRef.current) return;
+          if (e.lastEventId) lastEventId.current = e.lastEventId;
+          try {
+            const event: JobProgressEvent = JSON.parse(e.data as string);
+            setJobs((prev: JobState) => ({ ...prev, [event.jobId]: event }));
+            onProgress?.(event);
+            if (event.status === 'failed') {
+              onJobFailed?.(event);
+            }
+          } catch {
+            // malformed event — ignore
+          }
+        });
+
+        // Handle explicit 'failed' SSE event type emitted by the backend
+        es.addEventListener('failed', (e: MessageEvent) => {
+          if (!mountedRef.current) return;
+          if (e.lastEventId) lastEventId.current = e.lastEventId;
+          try {
+            const event: JobProgressEvent = JSON.parse(e.data as string);
+            const failedEvent: JobProgressEvent = { ...event, status: 'failed' };
+            setJobs((prev: JobState) => ({ ...prev, [failedEvent.jobId]: failedEvent }));
+            onProgress?.(failedEvent);
+            onJobFailed?.(failedEvent);
+          } catch {
+            // malformed event — ignore
+          }
+        });
+
+        es.onerror = () => {
+          if (!mountedRef.current) return;
+          setConnected(false);
+          es.close();
+          esRef.current = null;
+
+          if (retryCount.current >= maxRetries) {
+            setError(`Stream disconnected after ${maxRetries} reconnection attempts.`);
+            return;
+          }
+
+          // Exponential backoff: 1s → 2s → 4s → … capped at 30s
+          const delay = Math.min(retryDelay.current, MAX_RETRY_DELAY_MS);
+          retryDelay.current = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
+          retryCount.current += 1;
+          retryRef.current = setTimeout(connect, delay);
+        };
+      } catch (err) {
+        // Ticket fetch failed — retry with backoff
+        if (!mountedRef.current) return;
+        setConnected(false);
+        
+        if (retryCount.current >= maxRetries) {
+          setError(`Failed to establish SSE connection after ${maxRetries} attempts.`);
+          return;
+        }
+
+        const delay = Math.min(retryDelay.current, MAX_RETRY_DELAY_MS);
+        retryDelay.current = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
+        retryCount.current += 1;
+        retryRef.current = setTimeout(connect, delay);
       }
-    });
-
-    // Handle explicit 'failed' SSE event type emitted by the backend
-    es.addEventListener('failed', (e: MessageEvent) => {
-      if (!mountedRef.current) return;
-      if (e.lastEventId) lastEventId.current = e.lastEventId;
-      try {
-        const event: JobProgressEvent = JSON.parse(e.data as string);
-        const failedEvent: JobProgressEvent = { ...event, status: 'failed' };
-        setJobs((prev: JobState) => ({ ...prev, [failedEvent.jobId]: failedEvent }));
-        onProgress?.(failedEvent);
-        onJobFailed?.(failedEvent);
-      } catch {
-        // malformed event — ignore
-      }
-    });
-
-    es.onerror = () => {
-      if (!mountedRef.current) return;
-      setConnected(false);
-      es.close();
-      esRef.current = null;
-
-      if (retryCount.current >= maxRetries) {
-        setError(`Stream disconnected after ${maxRetries} reconnection attempts.`);
-        return;
-      }
-
-      // Exponential backoff: 1s → 2s → 4s → … capped at 30s
-      const delay = Math.min(retryDelay.current, MAX_RETRY_DELAY_MS);
-      retryDelay.current = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
-      retryCount.current += 1;
-      retryRef.current = setTimeout(connect, delay);
-    };
+    })();
   }, [token, baseUrl, onProgress, onJobFailed, maxRetries, cleanupStream]);
 
   useEffect(() => {
