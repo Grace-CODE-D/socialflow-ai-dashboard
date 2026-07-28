@@ -11,7 +11,6 @@ interface ListingVisibilityToggleProps {
 export const ListingVisibilityToggle: React.FC<ListingVisibilityToggleProps> = ({
   listingId,
   initialIsActive,
-  mentorId,
   onToggleSuccess,
   onToggleError
 }) => {
@@ -23,14 +22,18 @@ export const ListingVisibilityToggle: React.FC<ListingVisibilityToggleProps> = (
     const previousState = isActive;
     const newState = !isActive;
     try {
-      // Assuming authorization token is passed via headers elsewhere or credentials
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No access token found');
+      }
+
       const response = await fetch(`/api/listings/${listingId}/visibility`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          // Usually handled by interceptors, providing Authorization here is project-defined
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ isActive: newState, mentorId }), 
+        body: JSON.stringify({ isActive: newState }),
       });
 
       const data = await response.json();

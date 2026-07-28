@@ -29,6 +29,7 @@ import {
   getListing,
   deleteListing,
   listListings,
+  toggleListingVisibility,
 } from '../controllers/ListingController';
 
 function buildApp(opts: { userId?: string; orgId?: string } = {}) {
@@ -44,6 +45,7 @@ function buildApp(opts: { userId?: string; orgId?: string } = {}) {
   app.get('/listings/:id', getListing);
   app.delete('/listings/:id', deleteListing);
   app.get('/listings', listListings);
+  app.patch('/listings/:id/visibility', toggleListingVisibility);
   // Global error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ success: false, message: err.message });
@@ -186,6 +188,40 @@ describe('deleteListing', () => {
     const res = await request(app).delete(`/listings/${LISTING_ID}`);
 
     expect(res.status).toBe(500);
+  });
+});
+
+// ── toggleListingVisibility ──────────────────────────────────────────────────
+describe('toggleListingVisibility', () => {
+  it('rejects a forged mentorId in the body when there is no authenticated user', async () => {
+    const app = buildApp({}); // no userId — simulates missing/invalid auth
+
+    const res = await request(app)
+      .patch(`/listings/${LISTING_ID}/visibility`)
+      .send({ isActive: false, mentorId: 'attacker-mentor-id' });
+
+    expect(res.status).toBe(401);
+    expect(listingService.toggleVisibility).not.toHaveBeenCalled();
+  });
+
+  it('ignores a client-supplied mentorId and uses the authenticated user id', async () => {
+    (listingService.toggleVisibility as jest.Mock).mockResolvedValue({
+      ...sampleListing,
+      isActive: false,
+    });
+    const app = buildApp({ userId: MENTOR_ID, orgId: ORG_A });
+
+    const res = await request(app)
+      .patch(`/listings/${LISTING_ID}/visibility`)
+      .send({ isActive: false, mentorId: 'attacker-mentor-id' });
+
+    expect(res.status).toBe(200);
+    expect(listingService.toggleVisibility).toHaveBeenCalledWith(
+      LISTING_ID,
+      MENTOR_ID,
+      false,
+      ORG_A,
+    );
   });
 });
 
