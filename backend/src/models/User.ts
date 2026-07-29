@@ -30,6 +30,10 @@ export const UserStore = {
     prisma.user.update({ where: { id }, data: patch }).catch(() => null),
 
   /** Delete all users — intended for test teardown only. */
-  clear: (): Promise<void> =>
-    prisma.user.deleteMany().then(() => undefined),
+  clear: async (): Promise<void> => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('UserStore.clear() must not be called outside of tests');
+    }
+    await prisma.user.deleteMany();
+  },
 };
