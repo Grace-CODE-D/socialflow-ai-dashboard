@@ -1,20 +1,30 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
+import { authenticate as authMiddleware } from '../middleware/authenticate';
 import { youTubeService } from '../services/YouTubeService';
 import { enqueueYouTubeSync } from '../jobs/youtubeSyncJob';
 import { createLogger } from '../lib/logger';
+import { redis } from '../lib/redis';
 
 const router = Router();
 const logger = createLogger('youtube-routes');
+
+const OAUTH_STATE_TTL = 600;
 
 /**
  * GET /api/youtube/auth
  * Redirects the user to Google's OAuth2 consent screen.
  */
-router.get('/auth', (_req: Request, res: Response) => {
+router.get('/auth', authMiddleware, async (req: Request, res: Response) => {
   if (!youTubeService.isConfigured()) {
     return res.status(503).json({ error: 'YouTube API not configured.' });
   }
-  return res.redirect(youTubeService.getAuthUrl());
+  const state = crypto.randomBytes(16).toString('hex');
+  const userId = (req as any).user?.id;
+  if (userId) {
+    await redis.set(`oauth:state:youtube:${userId}`, state, 'EX', OAUTH_STATE_TTL);
+  }
+  return res.redirect(youTubeService.getAuthUrl(state));
 });
 
 /**
@@ -23,7 +33,7 @@ router.get('/auth', (_req: Request, res: Response) => {
  * and triggers an immediate analytics sync.
  */
 router.get('/callback', async (req: Request, res: Response) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
 
   if (error) {
     logger.warn('OAuth callback error', { error });
@@ -32,6 +42,19 @@ router.get('/callback', async (req: Request, res: Response) => {
 
   if (!code || typeof code !== 'string') {
     return res.status(400).json({ error: 'Missing authorization code.' });
+  }
+
+  if (!state || typeof state !== 'string') {
+    return res.status(400).json({ error: 'Missing state parameter.' });
+  }
+
+  const userId = (req as any).user?.id;
+  if (userId) {
+    const storedState = await redis.get(`oauth:state:youtube:${userId}`);
+    await redis.del(`oauth:state:youtube:${userId}`);
+    if (storedState !== state) {
+      return res.status(400).json({ error: 'Invalid state parameter.' });
+    }
   }
 
   try {

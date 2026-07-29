@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate as authMiddleware } from '../middleware/authenticate';
+import { orgMiddleware } from '../middleware/orgMiddleware';
 import { validate } from '../middleware/validate';
 import { createPost } from '../controllers/PostController';
 
@@ -9,11 +10,10 @@ const router = Router();
 const createPostSchema = z.object({
   content: z.string().min(1).max(5000),
   platform: z.enum(['twitter', 'linkedin', 'instagram', 'tiktok', 'facebook', 'youtube']),
-  organizationId: z.string().uuid(),
   scheduledAt: z.string().datetime().optional(),
 });
 
-router.use(authMiddleware);
+router.use(authMiddleware, orgMiddleware);
 
 /**
  * @openapi
@@ -27,7 +27,7 @@ router.use(authMiddleware);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [content, platform, organizationId]
+ *             required: [content, platform]
  *             properties:
  *               content:
  *                 type: string
@@ -36,9 +36,6 @@ router.use(authMiddleware);
  *               platform:
  *                 type: string
  *                 enum: [twitter, linkedin, instagram, tiktok, facebook, youtube]
- *               organizationId:
- *                 type: string
- *                 format: uuid
  *               scheduledAt:
  *                 type: string
  *                 format: date-time

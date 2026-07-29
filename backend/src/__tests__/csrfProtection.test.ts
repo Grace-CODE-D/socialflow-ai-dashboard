@@ -386,7 +386,7 @@ describe('session-bound CSRF token', () => {
 
 import request from 'supertest';
 import express from 'express';
-import authRouter from '../routes/auth';
+import authRouter from '../modules/auth/routes';
 import { csrfProtection as csrfMiddleware } from '../middleware/csrfProtection';
 
 // Mock rate-limit and AuthBlacklistService so the auth router works in isolation
@@ -580,7 +580,9 @@ describe('#1100 token generation with crypto.randomBytes stubbing', () => {
 
   it('produces a hex string of 64 characters (32 bytes) for the session ID', () => {
     process.env.NODE_ENV = 'test';
-    randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.alloc(32, 0x5f) as any);
+    randomBytesSpy = jest
+      .spyOn(crypto, 'randomBytes')
+      .mockReturnValue(Buffer.alloc(32, 0x5f) as any);
 
     const next = jest.fn() as unknown as NextFunction;
     const req = makeReq({ headers: { origin: 'http://localhost:3000' } });

@@ -8,9 +8,12 @@ import { tiktokService } from '../services/TikTokService';
 import { enqueueTikTokVideoUpload } from '../jobs/tiktokVideoJob';
 import { dispatchEvent } from '../services/WebhookDispatcher';
 import { createLogger } from '../lib/logger';
+import { redis } from '../lib/redis';
 
 const router = Router();
 const logger = createLogger('tiktok-routes');
+
+const OAUTH_STATE_TTL = 600;
 
 // ─── OAuth ────────────────────────────────────────────────────────────────────
 
@@ -19,12 +22,15 @@ const logger = createLogger('tiktok-routes');
  * Redirects the user to TikTok's OAuth2 consent screen.
  * Required scopes: user.info.basic, video.publish, video.upload
  */
-router.get('/auth', (req: Request, res: Response) => {
+router.get('/auth', authMiddleware, async (req: Request, res: Response) => {
   if (!tiktokService.isConfigured()) {
     return res.status(503).json({ error: 'TikTok API not configured.' });
   }
-  // CSRF state stored in session/cookie in production; using a random value here
   const state = crypto.randomBytes(16).toString('hex');
+  const userId = (req as any).user?.id;
+  if (userId) {
+    await redis.set(`oauth:state:tiktok:${userId}`, state, 'EX', OAUTH_STATE_TTL);
+  }
   return res.redirect(tiktokService.getAuthUrl(state));
 });
 
@@ -33,7 +39,7 @@ router.get('/auth', (req: Request, res: Response) => {
  * Handles the OAuth2 redirect from TikTok, exchanges code for tokens.
  */
 router.get('/callback', async (req: Request, res: Response) => {
-  const { code, error, error_description } = req.query;
+  const { code, error, error_description, state } = req.query;
 
   if (error) {
     logger.warn('TikTok OAuth callback error', { error, error_description });
@@ -42,6 +48,19 @@ router.get('/callback', async (req: Request, res: Response) => {
 
   if (!code || typeof code !== 'string') {
     return res.status(400).json({ error: 'Missing authorization code.' });
+  }
+
+  if (!state || typeof state !== 'string') {
+    return res.status(400).json({ error: 'Missing state parameter.' });
+  }
+
+  const userId = (req as any).user?.id;
+  if (userId) {
+    const storedState = await redis.get(`oauth:state:tiktok:${userId}`);
+    await redis.del(`oauth:state:tiktok:${userId}`);
+    if (storedState !== state) {
+      return res.status(400).json({ error: 'Invalid state parameter.' });
+    }
   }
 
   try {
@@ -104,68 +123,80 @@ router.get('/user', async (req: Request, res: Response) => {
  * Header: x-tiktok-token, x-tiktok-refresh-token, x-tiktok-expires-at
  */
 // Required permission: posts:create
-router.post('/video/upload', authMiddleware, checkPermission('posts:create'), async (req: Request, res: Response) => {
-  const accessToken = req.headers['x-tiktok-token'] as string;
-  const refreshToken = req.headers['x-tiktok-refresh-token'] as string;
-  const expiresAt = Number(req.headers['x-tiktok-expires-at']);
+router.post(
+  '/video/upload',
+  authMiddleware,
+  checkPermission('posts:create'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.headers['x-tiktok-token'] as string;
+    const refreshToken = req.headers['x-tiktok-refresh-token'] as string;
+    const expiresAt = Number(req.headers['x-tiktok-expires-at']);
 
-  if (!accessToken || !refreshToken) {
-    return res
-      .status(400)
-      .json({ error: 'x-tiktok-token and x-tiktok-refresh-token headers required.' });
-  }
+    if (!accessToken || !refreshToken) {
+      return res
+        .status(400)
+        .json({ error: 'x-tiktok-token and x-tiktok-refresh-token headers required.' });
+    }
 
-  const { filePath, title, description, privacyLevel, disableDuet, disableComment, disableStitch } =
-    req.body;
-
-  if (!filePath || !title) {
-    return res.status(400).json({ error: 'filePath and title are required.' });
-  }
-
-  // Validate file exists and get size
-  let fileSizeBytes: number;
-  try {
-    const stat = await fs.promises.stat(filePath);
-    fileSizeBytes = stat.size;
-  } catch {
-    return res.status(400).json({ error: `File not found: ${filePath}` });
-  }
-
-  // Basic extension check — TikTok supports mp4, webm, mov
-  const ext = path.extname(filePath).toLowerCase();
-  if (!['.mp4', '.webm', '.mov'].includes(ext)) {
-    return res.status(400).json({ error: 'Unsupported video format. Use mp4, webm, or mov.' });
-  }
-
-  try {
-    const jobId = await enqueueTikTokVideoUpload({
-      accessToken,
-      refreshToken,
-      expiresAt,
+    const {
       filePath,
-      fileSizeBytes,
-      request: {
-        videoSource: filePath,
-        sourceType: 'FILE_UPLOAD',
-        title,
-        description,
-        privacyLevel: privacyLevel || 'SELF_ONLY',
-        disableDuet: disableDuet ?? false,
-        disableComment: disableComment ?? false,
-        disableStitch: disableStitch ?? false,
-      },
-    });
+      title,
+      description,
+      privacyLevel,
+      disableDuet,
+      disableComment,
+      disableStitch,
+    } = req.body;
 
-    return res.status(202).json({
-      message: 'Video upload job enqueued.',
-      jobId,
-      fileSizeBytes,
-    });
-  } catch (err) {
-    logger.error('Failed to enqueue TikTok video upload', { error: (err as Error).message });
-    return res.status(500).json({ error: 'Failed to enqueue video upload.' });
-  }
-});
+    if (!filePath || !title) {
+      return res.status(400).json({ error: 'filePath and title are required.' });
+    }
+
+    // Validate file exists and get size
+    let fileSizeBytes: number;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      fileSizeBytes = stat.size;
+    } catch {
+      return res.status(400).json({ error: `File not found: ${filePath}` });
+    }
+
+    // Basic extension check — TikTok supports mp4, webm, mov
+    const ext = path.extname(filePath).toLowerCase();
+    if (!['.mp4', '.webm', '.mov'].includes(ext)) {
+      return res.status(400).json({ error: 'Unsupported video format. Use mp4, webm, or mov.' });
+    }
+
+    try {
+      const jobId = await enqueueTikTokVideoUpload({
+        accessToken,
+        refreshToken,
+        expiresAt,
+        filePath,
+        fileSizeBytes,
+        request: {
+          videoSource: filePath,
+          sourceType: 'FILE_UPLOAD',
+          title,
+          description,
+          privacyLevel: privacyLevel || 'SELF_ONLY',
+          disableDuet: disableDuet ?? false,
+          disableComment: disableComment ?? false,
+          disableStitch: disableStitch ?? false,
+        },
+      });
+
+      return res.status(202).json({
+        message: 'Video upload job enqueued.',
+        jobId,
+        fileSizeBytes,
+      });
+    } catch (err) {
+      logger.error('Failed to enqueue TikTok video upload', { error: (err as Error).message });
+      return res.status(500).json({ error: 'Failed to enqueue video upload.' });
+    }
+  },
+);
 
 /**
  * POST /api/tiktok/video/upload-url
@@ -175,35 +206,40 @@ router.post('/video/upload', authMiddleware, checkPermission('posts:create'), as
  * Header: x-tiktok-token
  */
 // Required permission: posts:create
-router.post('/video/upload-url', authMiddleware, checkPermission('posts:create'), async (req: Request, res: Response) => {
-  const accessToken = req.headers['x-tiktok-token'] as string;
-  if (!accessToken) {
-    return res.status(400).json({ error: 'x-tiktok-token header required.' });
-  }
+router.post(
+  '/video/upload-url',
+  authMiddleware,
+  checkPermission('posts:create'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.headers['x-tiktok-token'] as string;
+    if (!accessToken) {
+      return res.status(400).json({ error: 'x-tiktok-token header required.' });
+    }
 
-  const { videoUrl, title, description, privacyLevel } = req.body;
-  if (!videoUrl || !title) {
-    return res.status(400).json({ error: 'videoUrl and title are required.' });
-  }
+    const { videoUrl, title, description, privacyLevel } = req.body;
+    if (!videoUrl || !title) {
+      return res.status(400).json({ error: 'videoUrl and title are required.' });
+    }
 
-  try {
-    const result = await tiktokService.uploadVideoFromUrl(accessToken, {
-      videoSource: videoUrl,
-      sourceType: 'PULL_FROM_URL',
-      title,
-      description,
-      privacyLevel: privacyLevel || 'SELF_ONLY',
-    });
+    try {
+      const result = await tiktokService.uploadVideoFromUrl(accessToken, {
+        videoSource: videoUrl,
+        sourceType: 'PULL_FROM_URL',
+        title,
+        description,
+        privacyLevel: privacyLevel || 'SELF_ONLY',
+      });
 
-    return res.status(202).json({
-      message: 'TikTok video URL upload initiated.',
-      publishId: result.publishId,
-    });
-  } catch (err) {
-    logger.error('Failed to upload TikTok video from URL', { error: (err as Error).message });
-    return res.status(502).json({ error: (err as Error).message });
-  }
-});
+      return res.status(202).json({
+        message: 'TikTok video URL upload initiated.',
+        publishId: result.publishId,
+      });
+    } catch (err) {
+      logger.error('Failed to upload TikTok video from URL', { error: (err as Error).message });
+      return res.status(502).json({ error: (err as Error).message });
+    }
+  },
+);
 
 // ─── Video Status ─────────────────────────────────────────────────────────────
 

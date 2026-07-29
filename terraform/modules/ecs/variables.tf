@@ -42,3 +42,13 @@ variable "redis_url"        { type = string; sensitive = true }
 variable "jwt_secret"       { type = string; sensitive = true }
 variable "s3_bucket"        { type = string }
 variable "aws_region"       { type = string }
+
+variable "service_domain" {
+  type        = string
+  description = "Domain name for the service, used for the ACM certificate and HTTPS listener"
+}
+
+variable "hosted_zone_id" {
+  type        = string
+  description = "Route53 hosted zone ID for DNS validation of the ACM certificate"
+}

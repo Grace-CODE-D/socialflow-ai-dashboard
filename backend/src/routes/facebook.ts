@@ -1,21 +1,30 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { authenticate as authMiddleware } from '../middleware/authenticate';
 import { checkPermission } from '../middleware/checkPermission';
 import { facebookService, FacebookPostRequest } from '../services/FacebookService';
 import { createLogger } from '../lib/logger';
+import { redis } from '../lib/redis';
 
 const router = Router();
 const logger = createLogger('facebook-routes');
+
+const OAUTH_STATE_TTL = 600;
 
 /**
  * GET /api/facebook/auth
  * Redirects the user to Facebook's OAuth2 consent screen.
  */
-router.get('/auth', (_req: Request, res: Response) => {
+router.get('/auth', authMiddleware, async (req: Request, res: Response) => {
   if (!facebookService.isConfigured()) {
     return res.status(503).json({ error: 'Facebook API not configured.' });
   }
-  return res.redirect(facebookService.getAuthUrl());
+  const state = crypto.randomBytes(16).toString('hex');
+  const userId = (req as any).user?.id;
+  if (userId) {
+    await redis.set(`oauth:state:facebook:${userId}`, state, 'EX', OAUTH_STATE_TTL);
+  }
+  return res.redirect(facebookService.getAuthUrl(state));
 });
 
 /**
@@ -24,7 +33,7 @@ router.get('/auth', (_req: Request, res: Response) => {
  * and returns the list of pages the user manages.
  */
 router.get('/callback', async (req: Request, res: Response) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
 
   if (error) {
     logger.warn('OAuth callback error', { error });
@@ -33,6 +42,19 @@ router.get('/callback', async (req: Request, res: Response) => {
 
   if (!code || typeof code !== 'string') {
     return res.status(400).json({ error: 'Missing authorization code.' });
+  }
+
+  if (!state || typeof state !== 'string') {
+    return res.status(400).json({ error: 'Missing state parameter.' });
+  }
+
+  const userId = (req as any).user?.id;
+  if (userId) {
+    const storedState = await redis.get(`oauth:state:facebook:${userId}`);
+    await redis.del(`oauth:state:facebook:${userId}`);
+    if (storedState !== state) {
+      return res.status(400).json({ error: 'Invalid state parameter.' });
+    }
   }
 
   try {
@@ -95,41 +117,46 @@ router.get('/pages', async (req: Request, res: Response) => {
  * Header: x-facebook-token (user access token)
  */
 // Required permission: posts:create
-router.post('/post', authMiddleware, checkPermission('posts:create'), async (req: Request, res: Response) => {
-  const accessToken = req.headers['x-facebook-token'] as string;
-  const { pageId, message, imageUrl, scheduledTime } = req.body;
+router.post(
+  '/post',
+  authMiddleware,
+  checkPermission('posts:create'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.headers['x-facebook-token'] as string;
+    const { pageId, message, imageUrl, scheduledTime } = req.body;
 
-  if (!accessToken) {
-    return res.status(400).json({ error: 'x-facebook-token header required.' });
-  }
+    if (!accessToken) {
+      return res.status(400).json({ error: 'x-facebook-token header required.' });
+    }
 
-  if (!pageId || !message) {
-    return res.status(400).json({ error: 'pageId and message are required.' });
-  }
+    if (!pageId || !message) {
+      return res.status(400).json({ error: 'pageId and message are required.' });
+    }
 
-  try {
-    const postRequest: FacebookPostRequest = {
-      pageId,
-      message,
-      imageUrl,
-      scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined,
-    };
+    try {
+      const postRequest: FacebookPostRequest = {
+        pageId,
+        message,
+        imageUrl,
+        scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined,
+      };
 
-    const post = await facebookService.postToPageWithUserToken(accessToken, postRequest);
-    return res.json({
-      success: true,
-      post: {
-        id: post.id,
-        message: post.message,
-        created_time: post.created_time,
-        permalink_url: post.permalink_url,
-      },
-    });
-  } catch (err) {
-    logger.error('Failed to create post', { error: (err as Error).message });
-    return res.status(502).json({ error: (err as Error).message });
-  }
-});
+      const post = await facebookService.postToPageWithUserToken(accessToken, postRequest);
+      return res.json({
+        success: true,
+        post: {
+          id: post.id,
+          message: post.message,
+          created_time: post.created_time,
+          permalink_url: post.permalink_url,
+        },
+      });
+    } catch (err) {
+      logger.error('Failed to create post', { error: (err as Error).message });
+      return res.status(502).json({ error: (err as Error).message });
+    }
+  },
+);
 
 /**
  * GET /api/facebook/post/:pageId/:postId/comments
@@ -160,27 +187,32 @@ router.get('/post/:pageId/:postId/comments', async (req: Request, res: Response)
  * Header: x-facebook-token
  */
 // Required permission: posts:create
-router.post('/comment/:commentId/reply', authMiddleware, checkPermission('posts:create'), async (req: Request, res: Response) => {
-  const accessToken = req.headers['x-facebook-token'] as string;
-  const { commentId } = req.params;
-  const { message, pageId } = req.body;
+router.post(
+  '/comment/:commentId/reply',
+  authMiddleware,
+  checkPermission('posts:create'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.headers['x-facebook-token'] as string;
+    const { commentId } = req.params;
+    const { message, pageId } = req.body;
 
-  if (!accessToken) {
-    return res.status(400).json({ error: 'x-facebook-token header required.' });
-  }
+    if (!accessToken) {
+      return res.status(400).json({ error: 'x-facebook-token header required.' });
+    }
 
-  if (!message || !pageId) {
-    return res.status(400).json({ error: 'message and pageId are required.' });
-  }
+    if (!message || !pageId) {
+      return res.status(400).json({ error: 'message and pageId are required.' });
+    }
 
-  try {
-    const result = await facebookService.replyToComment(pageId, commentId, message, accessToken);
-    return res.json({ success: true, commentId: result.id });
-  } catch (err) {
-    logger.error('Failed to reply to comment', { error: (err as Error).message });
-    return res.status(502).json({ error: (err as Error).message });
-  }
-});
+    try {
+      const result = await facebookService.replyToComment(pageId, commentId, message, accessToken);
+      return res.json({ success: true, commentId: result.id });
+    } catch (err) {
+      logger.error('Failed to reply to comment', { error: (err as Error).message });
+      return res.status(502).json({ error: (err as Error).message });
+    }
+  },
+);
 
 /**
  * DELETE /api/facebook/comment/:commentId
@@ -189,22 +221,27 @@ router.post('/comment/:commentId/reply', authMiddleware, checkPermission('posts:
  * Query: pageId, access_token
  */
 // Required permission: posts:delete
-router.delete('/comment/:commentId', authMiddleware, checkPermission('posts:delete'), async (req: Request, res: Response) => {
-  const accessToken = req.query.access_token as string;
-  const { commentId } = req.params;
+router.delete(
+  '/comment/:commentId',
+  authMiddleware,
+  checkPermission('posts:delete'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.query.access_token as string;
+    const { commentId } = req.params;
 
-  if (!accessToken) {
-    return res.status(400).json({ error: 'access_token query param required.' });
-  }
+    if (!accessToken) {
+      return res.status(400).json({ error: 'access_token query param required.' });
+    }
 
-  try {
-    const result = await facebookService.deleteComment(commentId, accessToken);
-    return res.json({ success: result });
-  } catch (err) {
-    logger.error('Failed to delete comment', { error: (err as Error).message });
-    return res.status(502).json({ error: (err as Error).message });
-  }
-});
+    try {
+      const result = await facebookService.deleteComment(commentId, accessToken);
+      return res.json({ success: result });
+    } catch (err) {
+      logger.error('Failed to delete comment', { error: (err as Error).message });
+      return res.status(502).json({ error: (err as Error).message });
+    }
+  },
+);
 
 /**
  * GET /api/facebook/page/:pageId/insights

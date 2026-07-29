@@ -23,7 +23,10 @@ function handleYouTubeError(status: number, body: any): never {
   if (status === 403) {
     const errors: any[] = body?.error?.errors ?? [];
     const isQuota = errors.some(
-      (e) => e.domain === 'youtube.quota' || e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded',
+      (e) =>
+        e.domain === 'youtube.quota' ||
+        e.reason === 'quotaExceeded' ||
+        e.reason === 'dailyLimitExceeded',
     );
     if (isQuota) {
       // YouTube quota resets at midnight Pacific Time (UTC-7 / UTC-8).
@@ -98,7 +101,7 @@ class YouTubeService {
   }
 
   /** Step 1: Build the Google OAuth2 authorization URL */
-  public getAuthUrl(): string {
+  public getAuthUrl(state: string): string {
     const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
@@ -106,6 +109,7 @@ class YouTubeService {
       scope: 'https://www.googleapis.com/auth/youtube.readonly',
       access_type: 'offline',
       prompt: 'consent',
+      state,
     });
     return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }

@@ -286,7 +286,7 @@ describe('#607 signAccess / signRefresh throw when secret is falsy', () => {
   it('signAccess throws when JWT_SECRET is undefined', async () => {
     delete process.env.JWT_SECRET;
     jest.resetModules();
-    const { register } = await import('../controllers/auth');
+    const { register } = await import('../modules/auth/controllers/auth');
     const req = {
       body: { email: 'guard1@example.com', password: 'SecurePass1!' },
       ip: '127.0.0.1',
@@ -299,7 +299,7 @@ describe('#607 signAccess / signRefresh throw when secret is falsy', () => {
   it('signRefresh throws when JWT_REFRESH_SECRET is undefined', async () => {
     delete process.env.JWT_REFRESH_SECRET;
     jest.resetModules();
-    const { register } = await import('../controllers/auth');
+    const { register } = await import('../modules/auth/controllers/auth');
     const req = {
       body: { email: 'guard2@example.com', password: 'SecurePass1!' },
       ip: '127.0.0.1',

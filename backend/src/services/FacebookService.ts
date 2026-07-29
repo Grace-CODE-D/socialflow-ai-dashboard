@@ -70,7 +70,10 @@ const REFRESH_WINDOW_MS = Number(
  * prompt the user to re-authenticate, rather than a generic API failure.
  */
 export class AuthRefreshError extends Error {
-  constructor(message: string, public readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'AuthRefreshError';
   }
@@ -98,13 +101,14 @@ class FacebookService {
    * Step 1: Build the Facebook OAuth2 authorization URL
    * Handles both user login and page access token retrieval
    */
-  public getAuthUrl(): string {
+  public getAuthUrl(state: string): string {
     const params = new URLSearchParams({
       client_id: this.appId,
       redirect_uri: this.redirectUri,
       response_type: 'code',
       scope: 'pages_manage_posts,pages_read_engagement,pages_manage_metadata',
       auth_type: 'rerequest',
+      state,
     });
     return `${FACEBOOK_AUTH_URL}?${params}`;
   }

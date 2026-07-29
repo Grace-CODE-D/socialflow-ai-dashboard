@@ -17,6 +17,7 @@ import { createApolloServer } from './graphql';
 import { buildContext } from './graphql/context';
 import { authenticate } from './middleware/authenticate';
 import { config } from './config/config';
+import { registerModules } from './modules';
 
 // Initialise rate limiters (resolves Redis store in production)
 export const rateLimitersReady = initRateLimiters();
@@ -73,11 +74,18 @@ app.use('/api/v1', v1Router);
 
 // Legacy /api prefix — deprecated alias for backward compatibility.
 // Adds a Deprecation header so clients know to migrate to /api/v1.
-app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-  res.set('Deprecation', 'true');
-  res.set('Link', '</api/v1>; rel="successor-version"');
-  next();
-}, v1Router);
+app.use(
+  '/api',
+  (req: Request, res: Response, next: NextFunction) => {
+    res.set('Deprecation', 'true');
+    res.set('Link', '</api/v1>; rel="successor-version"');
+    next();
+  },
+  v1Router,
+);
+
+// Register all domain modules (migration target for flat routes)
+registerModules(app);
 
 // Bare /health for load-balancer probes (no versioning needed)
 app.get('/health', (_req: Request, res: Response) => {

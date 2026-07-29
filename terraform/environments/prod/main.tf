@@ -75,9 +75,6 @@ module "ecs" {
   desired_count       = 2
   container_port      = 3001
   app_sg_id           = aws_security_group.app.id
-  # DB connection is passed as discrete fields (not one pre-assembled
-  # database_url) so the password is never stored as part of a single
-  # combined Terraform-tracked attribute — see modules/ecs for details.
   db_host             = module.rds.endpoint
   db_port             = 5432
   db_name             = var.db_name
@@ -87,6 +84,8 @@ module "ecs" {
   jwt_secret          = var.jwt_secret
   s3_bucket           = module.s3.bucket_name
   aws_region          = var.aws_region
+  service_domain      = var.service_domain
+  hosted_zone_id      = var.hosted_zone_id
 }
 
 module "rds" {

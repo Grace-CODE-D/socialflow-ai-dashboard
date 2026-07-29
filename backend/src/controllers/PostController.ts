@@ -8,13 +8,18 @@ import { indexPost, deletePost as deleteSearchPost } from '../services/SearchSer
 
 export async function createPost(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { content, platform, scheduledAt, organizationId, mediaUrls } = req.body as {
+    const { content, platform, scheduledAt, mediaUrls } = req.body as {
       content: string;
       platform: string;
       scheduledAt?: string;
-      organizationId: string;
       mediaUrls?: string[];
     };
+
+    const organizationId = req.activeOrgId;
+
+    if (!organizationId) {
+      throw new BadRequestError('No active organization', 'NO_ACTIVE_ORG');
+    }
 
     // Run moderation before persisting. ModerationService itself decides
     // fail-open vs fail-closed behaviour (via MODERATION_MODE) when the

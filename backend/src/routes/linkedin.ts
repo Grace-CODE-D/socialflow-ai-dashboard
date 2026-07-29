@@ -1,21 +1,29 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { authenticate as authMiddleware } from '../middleware/authenticate';
 import { checkPermission } from '../middleware/checkPermission';
 import { linkedInService, LinkedInShareRequest } from '../services/LinkedInService';
 import { createLogger } from '../lib/logger';
+import { redis } from '../lib/redis';
 
 const router = Router();
 const logger = createLogger('linkedin-routes');
+
+const OAUTH_STATE_TTL = 600;
 
 /**
  * GET /api/v1/linkedin/auth
  * Redirects the user to LinkedIn's OAuth 2.0 consent screen.
  */
-router.get('/auth', (req: Request, res: Response) => {
+router.get('/auth', authMiddleware, async (req: Request, res: Response) => {
   if (!linkedInService.isConfigured()) {
     return res.status(503).json({ error: 'LinkedIn API not configured.' });
   }
-  const state = (req.query.state as string) || crypto.randomUUID();
+  const state = crypto.randomBytes(16).toString('hex');
+  const userId = (req as any).user?.id;
+  if (userId) {
+    await redis.set(`oauth:state:linkedin:${userId}`, state, 'EX', OAUTH_STATE_TTL);
+  }
   return res.redirect(linkedInService.getAuthUrl(state));
 });
 
@@ -35,6 +43,19 @@ router.get('/callback', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing authorization code.' });
   }
 
+  if (!state || typeof state !== 'string') {
+    return res.status(400).json({ error: 'Missing state parameter.' });
+  }
+
+  const userId = (req as any).user?.id;
+  if (userId) {
+    const storedState = await redis.get(`oauth:state:linkedin:${userId}`);
+    await redis.del(`oauth:state:linkedin:${userId}`);
+    if (storedState !== state) {
+      return res.status(400).json({ error: 'Invalid state parameter.' });
+    }
+  }
+
   try {
     const tokens = await linkedInService.exchangeCode(code);
     const profile = await linkedInService.getProfile(tokens.accessToken);
@@ -48,7 +69,6 @@ router.get('/callback', async (req: Request, res: Response) => {
         vanityName: profile.vanityName,
         personUrn: `urn:li:person:${profile.id}`,
       },
-      state,
     });
   } catch (err) {
     logger.error('LinkedIn OAuth callback failed', { error: (err as Error).message });
@@ -89,34 +109,39 @@ router.get('/profile', async (req: Request, res: Response) => {
  * When provided it creates a multi-image post and takes precedence over `url`.
  */
 // Required permission: posts:create
-router.post('/share', authMiddleware, checkPermission('posts:create'), async (req: Request, res: Response) => {
-  const accessToken = req.headers['x-linkedin-token'] as string;
-  if (!accessToken) {
-    return res.status(400).json({ error: 'x-linkedin-token header required.' });
-  }
+router.post(
+  '/share',
+  authMiddleware,
+  checkPermission('posts:create'),
+  async (req: Request, res: Response) => {
+    const accessToken = req.headers['x-linkedin-token'] as string;
+    if (!accessToken) {
+      return res.status(400).json({ error: 'x-linkedin-token header required.' });
+    }
 
-  const { authorUrn, text, url, title, description, visibility, mediaAssets } = req.body;
-  if (!authorUrn || !text) {
-    return res.status(400).json({ error: 'authorUrn and text are required.' });
-  }
+    const { authorUrn, text, url, title, description, visibility, mediaAssets } = req.body;
+    if (!authorUrn || !text) {
+      return res.status(400).json({ error: 'authorUrn and text are required.' });
+    }
 
-  try {
-    const shareRequest: LinkedInShareRequest = {
-      authorUrn,
-      text,
-      url,
-      title,
-      description,
-      visibility,
-      mediaAssets,
-    };
-    const result = await linkedInService.shareContent(accessToken, shareRequest);
-    return res.status(201).json({ success: true, postUrn: result.id });
-  } catch (err) {
-    logger.error('Failed to share LinkedIn post', { error: (err as Error).message });
-    return res.status(502).json({ error: (err as Error).message });
-  }
-});
+    try {
+      const shareRequest: LinkedInShareRequest = {
+        authorUrn,
+        text,
+        url,
+        title,
+        description,
+        visibility,
+        mediaAssets,
+      };
+      const result = await linkedInService.shareContent(accessToken, shareRequest);
+      return res.status(201).json({ success: true, postUrn: result.id });
+    } catch (err) {
+      logger.error('Failed to share LinkedIn post', { error: (err as Error).message });
+      return res.status(502).json({ error: (err as Error).message });
+    }
+  },
+);
 
 /**
  * GET /api/v1/linkedin/post/:postUrn/stats
