@@ -71,16 +71,35 @@ describe('UserRepository.create', () => {
 
 // ── findById ──────────────────────────────────────────────────────────────────
 describe('UserRepository.findById', () => {
-  it('returns the user when it exists', async () => {
+  it('returns the user without sensitive fields when it exists', async () => {
     const payload = userPayload();
     await repo.create(payload);
 
     const found = await repo.findById(payload.id);
     expect(found?.id).toBe(payload.id);
+    expect(found).not.toHaveProperty('passwordHash');
+    expect(found).not.toHaveProperty('refreshTokens');
   });
 
   it('returns null for an unknown id', async () => {
     expect(await repo.findById(randomUUID())).toBeNull();
+  });
+});
+
+// ── findByIdWithSensitive ──────────────────────────────────────────────────────
+describe('UserRepository.findByIdWithSensitive', () => {
+  it('returns the full user including passwordHash and refreshTokens', async () => {
+    const payload = userPayload();
+    await repo.create(payload);
+
+    const found = await repo.findByIdWithSensitive(payload.id);
+    expect(found?.id).toBe(payload.id);
+    expect(found).toHaveProperty('passwordHash');
+    expect(found).toHaveProperty('refreshTokens');
+  });
+
+  it('returns null for an unknown id', async () => {
+    expect(await repo.findByIdWithSensitive(randomUUID())).toBeNull();
   });
 });
 
