@@ -1,4 +1,3 @@
-import { vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -7,14 +6,14 @@ import { translationService } from '../services/TranslationService';
 
 describe('TranslationPanel', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('covers language selection and translate submission flow', async () => {
-    jest
-      .spyOn(translationService, 'getAvailableProviders')
-      .mockResolvedValue([{ name: 'Google Translate', available: true, providerId: 'google' }]);
-    jest.spyOn(translationService, 'translate').mockResolvedValue({
+    vi.spyOn(translationService, 'getAvailableProviders').mockResolvedValue([
+      { name: 'Google Translate', available: true, providerId: 'google' },
+    ]);
+    vi.spyOn(translationService, 'translate').mockResolvedValue({
       originalText: 'Hello world #test @user',
       sourceLanguage: 'en',
       translations: [
@@ -54,6 +53,11 @@ describe('TranslationPanel', () => {
     const textarea = screen.getByPlaceholderText(/Enter your post content here/i);
     fireEvent.change(textarea, { target: { value: 'Hello world #test @user' } });
 
+    await waitFor(() => {
+      expect(translationService.translate).toHaveBeenCalled();
+    });
+
+    // Click translate button
     const translateBtn = screen.getByRole('button', { name: /Translate Now/i });
     fireEvent.click(translateBtn);
 
