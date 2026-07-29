@@ -38,16 +38,56 @@ describe('UserRepository', () => {
 
   // ── findById ──────────────────────────────────────────────────────────────
   describe('findById', () => {
-    it('returns the user when found', async () => {
-      userMock.findUnique.mockResolvedValue(mockUser);
+    it('returns the user without sensitive fields when found', async () => {
+      userMock.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@example.com',
+        role: 'user',
+        lastPasswordChange: new Date('2024-01-01'),
+        createdAt: new Date('2024-01-01'),
+        deletedAt: null,
+      });
       const result = await repo.findById('user-1');
+      expect(result).toEqual({
+        id: 'user-1',
+        email: 'test@example.com',
+        role: 'user',
+        lastPasswordChange: new Date('2024-01-01'),
+        createdAt: new Date('2024-01-01'),
+        deletedAt: null,
+      });
+      expect(userMock.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          lastPasswordChange: true,
+          createdAt: true,
+          deletedAt: true,
+        },
+      });
+    });
+
+    it('returns null when not found', async () => {
+      userMock.findUnique.mockResolvedValue(null);
+      const result = await repo.findById('missing');
+      expect(result).toBeNull();
+    });
+  });
+
+  // ── findByIdWithSensitive ──────────────────────────────────────────────────
+  describe('findByIdWithSensitive', () => {
+    it('returns the full user including sensitive fields', async () => {
+      userMock.findUnique.mockResolvedValue(mockUser);
+      const result = await repo.findByIdWithSensitive('user-1');
       expect(result).toEqual(mockUser);
       expect(userMock.findUnique).toHaveBeenCalledWith({ where: { id: 'user-1' } });
     });
 
     it('returns null when not found', async () => {
       userMock.findUnique.mockResolvedValue(null);
-      const result = await repo.findById('missing');
+      const result = await repo.findByIdWithSensitive('missing');
       expect(result).toBeNull();
     });
   });

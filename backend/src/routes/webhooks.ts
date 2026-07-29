@@ -6,6 +6,7 @@ import { createWebhookSchema, updateWebhookSchema, testWebhookSchema } from '../
 import { verifySignature, rawBodyMiddleware } from '../middleware/verifySignature';
 import { prisma } from '../lib/prisma';
 import { createLogger } from '../lib/logger';
+import { decryptWebhookSecret } from '../lib/webhookSecretCrypto';
 import {
   listWebhooks,
   createWebhook,
@@ -258,7 +259,15 @@ router.post(
         where: { id: req.params.id },
         select: { secret: true },
       });
-      return sub?.secret ?? null;
+      if (!sub) return null;
+      try {
+        return decryptWebhookSecret(sub.secret);
+      } catch {
+        logger.error('Failed to decrypt webhook secret for inbound verification', {
+          subscriptionId: req.params.id,
+        });
+        return null;
+      }
     },
   }),
   (req, res) => {

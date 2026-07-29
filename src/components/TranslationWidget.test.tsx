@@ -3,21 +3,21 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { TranslationWidget } from './TranslationWidget';
 import { translationService } from '../services/TranslationService';
 
-jest.mock('../services/TranslationService', () => ({
+vi.mock('../services/TranslationService', () => ({
   translationService: {
-    getSupportedLanguages: jest.fn(() => [
+    getSupportedLanguages: vi.fn(() => [
       { code: 'es', name: 'Spanish', nativeName: 'Espanol', flag: 'ES' },
       { code: 'fr', name: 'French', nativeName: 'Francais', flag: 'FR' },
     ]),
-    searchLanguages: jest.fn(() => []),
-    translate: jest.fn(),
+    searchLanguages: vi.fn(() => []),
+    translate: vi.fn(),
   },
 }));
 
-const translateMock = translationService.translate as jest.Mock;
+const translateMock = translationService.translate as vi.Mock;
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   translateMock.mockResolvedValue({
     provider: 'mock',
     sourceLanguage: 'en',
@@ -27,8 +27,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.clearAllMocks();
-  jest.useRealTimers();
+  vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 test('debounces translation API calls', async () => {
@@ -43,7 +43,7 @@ test('debounces translation API calls', async () => {
   expect(translateMock).not.toHaveBeenCalled();
 
   await act(async () => {
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
   });
 
   expect(translateMock).toHaveBeenCalledTimes(1);
@@ -61,7 +61,7 @@ test('cancels pending debounce on unmount', async () => {
   unmount();
 
   act(() => {
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
   });
 
   expect(translateMock).not.toHaveBeenCalled();

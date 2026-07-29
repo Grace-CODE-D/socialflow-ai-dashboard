@@ -1,24 +1,24 @@
 import { renderHook, act } from '@testing-library/react';
 
-const mockInvoke = jest.fn();
-const mockSimulate = jest.fn();
-const mockGetContractEvents = jest.fn();
+const mockInvoke = vi.fn();
+const mockSimulate = vi.fn();
+const mockGetContractEvents = vi.fn();
 
-jest.mock('../services/SmartContractService', () => ({
-  SmartContractService: jest.fn().mockImplementation(() => ({
+vi.mock('../services/SmartContractService', () => ({
+  SmartContractService: vi.fn().mockImplementation(() => ({
     invoke: mockInvoke,
     simulate: mockSimulate,
     getContractEvents: mockGetContractEvents,
   })),
 }));
 
-const mockAutoConnect = jest.fn();
-const mockDisconnect = jest.fn();
-const mockIsConnected = jest.fn();
-const mockSignTransaction = jest.fn();
+const mockAutoConnect = vi.fn();
+const mockDisconnect = vi.fn();
+const mockIsConnected = vi.fn();
+const mockSignTransaction = vi.fn();
 let disconnectCallback: (() => void) | null = null;
 
-jest.mock('../services/WalletService', () => ({
+vi.mock('../services/WalletService', () => ({
   walletService: {
     autoConnect: (...args: any[]) => mockAutoConnect(...args),
     disconnect: (...args: any[]) => mockDisconnect(...args),
@@ -26,7 +26,7 @@ jest.mock('../services/WalletService', () => ({
     signTransaction: (...args: any[]) => mockSignTransaction(...args),
     onDisconnect: (listener: () => void) => {
       disconnectCallback = listener;
-      return jest.fn();
+      return vi.fn();
     },
   },
 }));
@@ -37,7 +37,7 @@ import { ContractCallType } from '../types/soroban';
 const WALLET = { publicKey: 'GABC123', name: 'Freighter', isConnected: true };
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   disconnectCallback = null;
 });
 

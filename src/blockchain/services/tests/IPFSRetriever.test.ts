@@ -1,26 +1,26 @@
 // @jest-environment node
 
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-jest.mock('../IPFSClient', () => {
-  const actual = jest.requireActual('../IPFSClient');
+vi.mock('../IPFSClient', () => {
+  const actual = vi.requireActual('../IPFSClient');
   return {
     ...actual,
-    idbGet: jest.fn().mockResolvedValue(null),
-    idbPut: jest.fn().mockResolvedValue(undefined),
-    idbAll: jest.fn().mockResolvedValue([]),
-    idbDelete: jest.fn().mockResolvedValue(undefined),
-    openDb: jest.fn().mockResolvedValue({
-      transaction: jest.fn().mockReturnValue({
-        objectStore: jest.fn().mockReturnValue({ clear: jest.fn() }),
+    idbGet: vi.fn().mockResolvedValue(null),
+    idbPut: vi.fn().mockResolvedValue(undefined),
+    idbAll: vi.fn().mockResolvedValue([]),
+    idbDelete: vi.fn().mockResolvedValue(undefined),
+    openDb: vi.fn().mockResolvedValue({
+      transaction: vi.fn().mockReturnValue({
+        objectStore: vi.fn().mockReturnValue({ clear: vi.fn() }),
         oncomplete: null,
         onerror: null,
       }),
     }),
-    timeoutSignal: jest.fn().mockReturnValue({
+    timeoutSignal: vi.fn().mockReturnValue({
       signal: { aborted: false },
-      clear: jest.fn(),
+      clear: vi.fn(),
     }),
   };
 });
@@ -43,13 +43,13 @@ function blobResponse(content = 'file-data', ok = true) {
 }
 
 afterEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('IPFSRetriever', () => {
   describe('getFile', () => {
     it('fetches from gateway and returns a Blob', async () => {
-      (idbGet as jest.Mock).mockResolvedValueOnce(null);
+      (idbGet as vi.Mock).mockResolvedValueOnce(null);
       mockFetch.mockReturnValueOnce(blobResponse('hello'));
       const retriever = new IPFSRetriever(makeClient());
       const blob = await retriever.getFile('QmTest');
@@ -57,7 +57,7 @@ describe('IPFSRetriever', () => {
     });
 
     it('returns cached file when present in idb', async () => {
-      (idbGet as jest.Mock).mockResolvedValueOnce({
+      (idbGet as vi.Mock).mockResolvedValueOnce({
         cid: 'QmCached',
         data: new Uint8Array([1, 2, 3]).buffer,
         lastAccess: Date.now(),
@@ -69,7 +69,7 @@ describe('IPFSRetriever', () => {
     });
 
     it('throws when all gateways fail', async () => {
-      (idbGet as jest.Mock).mockResolvedValueOnce(null);
+      (idbGet as vi.Mock).mockResolvedValueOnce(null);
       mockFetch.mockRejectedValue(new Error('network error'));
       const retriever = new IPFSRetriever(makeClient());
       await expect(retriever.getFile('QmBad')).rejects.toThrow();
@@ -99,7 +99,7 @@ describe('IPFSRetriever', () => {
 
   describe('getCacheSize', () => {
     it('sums size field from all idb entries', async () => {
-      (idbAll as jest.Mock).mockResolvedValueOnce([{ cid: 'a', size: 500 }, { cid: 'b', size: 300 }]);
+      (idbAll as vi.Mock).mockResolvedValueOnce([{ cid: 'a', size: 500 }, { cid: 'b', size: 300 }]);
       const retriever = new IPFSRetriever(makeClient());
       expect(await retriever.getCacheSize()).toBe(800);
     });

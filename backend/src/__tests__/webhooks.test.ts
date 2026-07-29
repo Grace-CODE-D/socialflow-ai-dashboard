@@ -1,6 +1,11 @@
 // Must be set before any module import
-process.env.JWT_SECRET = 'test-secret';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-that-is-at-least-32-chars!!';
+process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret-32-chars!!!!!';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
+process.env.WEBHOOK_SECRET_ENCRYPTION_KEY =
+  process.env.WEBHOOK_SECRET_ENCRYPTION_KEY ||
+  'a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4';
 
 import crypto from 'crypto';
 
@@ -38,6 +43,7 @@ const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
 import { attemptDelivery, dispatchEvent, retryPendingDeliveries } from '../services/WebhookDispatcher';
+import { encryptWebhookSecret } from '../lib/webhookSecretCrypto';
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -51,7 +57,7 @@ describe('dispatchEvent', () => {
 
   it('creates a delivery record for each subscriber', async () => {
     mockFindMany.mockResolvedValue([
-      { id: 'sub-1', url: 'https://example.com/hook', secret: 'secret' },
+      { id: 'sub-1', url: 'https://example.com/hook', secret: encryptWebhookSecret('secret') },
     ]);
     mockCreate.mockResolvedValue({ id: 'del-1' });
     mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
@@ -165,7 +171,7 @@ describe('retryPendingDeliveries', () => {
         id: 'del-retry',
         payload,
         attempts: 1,
-        subscription: { url: 'https://example.com/hook', secret: rotatedSecret },
+        subscription: { url: 'https://example.com/hook', secret: encryptWebhookSecret(rotatedSecret) },
       },
     ]);
     mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
@@ -188,7 +194,7 @@ describe('retryPendingDeliveries', () => {
         id: 'del-retry-2',
         payload,
         attempts: 1,
-        subscription: { url: 'https://example.com/hook', secret: rotatedSecret },
+        subscription: { url: 'https://example.com/hook', secret: encryptWebhookSecret(rotatedSecret) },
       },
     ]);
     mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
@@ -211,7 +217,7 @@ describe('startWebhookWorker', () => {
       'sha256=' + crypto.createHmac('sha256', rotatedSecret).update(payload).digest('hex');
 
     mockFindUnique.mockResolvedValue({
-      subscription: { secret: rotatedSecret },
+      subscription: { secret: encryptWebhookSecret(rotatedSecret) },
     });
     mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
     mockUpdate.mockResolvedValue({});
