@@ -5,6 +5,8 @@ import { withCache, invalidateCache, CacheTTL } from '../utils/cache';
 export type CreateUserInput = Prisma.UserCreateInput;
 export type UpdateUserInput = Prisma.UserUpdateInput;
 
+type UserWithoutSensitive = Omit<User, 'passwordHash' | 'refreshTokens'>;
+
 /**
  * UserRepository
  *
@@ -18,10 +20,24 @@ export class UserRepository {
    * Find a user by their unique ID.
    * Returns null when no matching record exists.
    */
-  async findById(id: string): Promise<User | null> {
+  async findById(id: string): Promise<UserWithoutSensitive | null> {
     return withCache(`user:${id}`, CacheTTL.USER_PROFILE, () =>
-      this.db.user.findUnique({ where: { id } }),
+      this.db.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          lastPasswordChange: true,
+          createdAt: true,
+          deletedAt: true,
+        },
+      }),
     );
+  }
+
+  async findByIdWithSensitive(id: string): Promise<User | null> {
+    return this.db.user.findUnique({ where: { id } });
   }
 
   /**
