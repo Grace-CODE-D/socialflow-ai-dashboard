@@ -4,6 +4,7 @@ import { Platform, ViewProps, View } from '../types';
 import { ReachScoreWidget } from './ReachScoreWidget';
 import { usePredictiveReach } from '../hooks/usePredictiveReach';
 import { PostAnalysisInput } from '../types/predictive';
+import { usePosts } from '../contexts/PostsContext';
 
 const PLATFORM_CHAR_LIMITS: Record<Platform, number> = {
   [Platform.TWITTER]: 280,
@@ -14,17 +15,18 @@ const PLATFORM_CHAR_LIMITS: Record<Platform, number> = {
 
 // Per-platform file size limits in bytes (image / video)
 const PLATFORM_FILE_SIZE_LIMITS: Record<Platform, { image: number; video: number }> = {
-  [Platform.TWITTER]:   { image: 5 * 1024 * 1024,   video: 512 * 1024 * 1024 },
-  [Platform.LINKEDIN]:  { image: 10 * 1024 * 1024,  video: 200 * 1024 * 1024 },
-  [Platform.FACEBOOK]:  { image: 10 * 1024 * 1024,  video: 4 * 1024 * 1024 * 1024 },
-  [Platform.INSTAGRAM]: { image: 8 * 1024 * 1024,   video: 100 * 1024 * 1024 },
+  [Platform.TWITTER]: { image: 5 * 1024 * 1024, video: 512 * 1024 * 1024 },
+  [Platform.LINKEDIN]: { image: 10 * 1024 * 1024, video: 200 * 1024 * 1024 },
+  [Platform.FACEBOOK]: { image: 10 * 1024 * 1024, video: 4 * 1024 * 1024 * 1024 },
+  [Platform.INSTAGRAM]: { image: 8 * 1024 * 1024, video: 100 * 1024 * 1024 },
 };
 
-const MaterialIcon = ({ name, className }: { name: string, className?: string }) => (
+const MaterialIcon = ({ name, className }: { name: string; className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
 );
 
 export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate }) => {
+  const { addPost } = usePosts();
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>([Platform.INSTAGRAM]);
   const [caption, setCaption] = useState('');
   const [hashtags, setHashtags] = useState<string[]>([]);
@@ -35,6 +37,23 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileSizeErrors, setFileSizeErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSchedulePost = () => {
+    const scheduledAt =
+      scheduleDate && scheduleTime
+        ? new Date(`${scheduleDate}T${scheduleTime}`).getTime()
+        : Date.now() + 3600_000;
+
+    addPost({
+      content: caption,
+      platform: selectedPlatforms[0] || 'instagram',
+      hashtags,
+      mediaType,
+      scheduledAt,
+      reachScore: Math.round(prediction?.reachScore ?? 0),
+      status: 'scheduled',
+    });
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -69,9 +88,8 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
   const postAnalysisData: PostAnalysisInput = {
     content: caption,
     platform: selectedPlatforms[0] || 'instagram',
-    scheduledTime: scheduleDate && scheduleTime 
-      ? new Date(`${scheduleDate}T${scheduleTime}`)
-      : undefined,
+    scheduledTime:
+      scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`) : undefined,
     hashtags,
     mediaType,
   };
@@ -97,7 +115,10 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
   };
 
   // Per-platform character limit enforcement
-  const activeLimits = selectedPlatforms.map(p => ({ platform: p, limit: PLATFORM_CHAR_LIMITS[p] ?? Infinity }));
+  const activeLimits = selectedPlatforms.map((p) => ({
+    platform: p,
+    limit: PLATFORM_CHAR_LIMITS[p] ?? Infinity,
+  }));
   const overLimitPlatforms = activeLimits.filter(({ limit }) => caption.length > limit);
   const isOverLimit = overLimitPlatforms.length > 0;
   const strictestLimit = activeLimits.reduce((min, { limit }) => Math.min(min, limit), Infinity);
@@ -109,13 +130,14 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
           <h2 className="text-2xl font-bold text-white">Create New Post</h2>
           {prediction && (
             <p className="text-sm text-gray-subtext mt-1">
-              Reach Score: <span className={`font-semibold ${getScoreColor(prediction.reachScore)}`}>
+              Reach Score:{' '}
+              <span className={`font-semibold ${getScoreColor(prediction.reachScore)}`}>
                 {Math.round(prediction.reachScore)} - {getScoreLabel(prediction.reachScore)}
               </span>
             </p>
           )}
         </div>
-        <button 
+        <button
           onClick={() => setShowReachAnalysis(!showReachAnalysis)}
           className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-medium bg-dark-surface text-white hover:bg-dark-bg transition-all"
         >
@@ -131,14 +153,14 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
           <Card>
             <h3 className="text-sm font-medium text-gray-subtext mb-3">Select Platforms</h3>
             <div className="flex gap-3 flex-wrap">
-              {Object.values(Platform).map(platform => (
+              {Object.values(Platform).map((platform) => (
                 <button
                   key={platform}
                   onClick={() => {
                     if (selectedPlatforms.includes(platform)) {
-                      setSelectedPlatforms(prev => prev.filter(p => p !== platform));
+                      setSelectedPlatforms((prev) => prev.filter((p) => p !== platform));
                     } else {
-                      setSelectedPlatforms(prev => [...prev, platform]);
+                      setSelectedPlatforms((prev) => [...prev, platform]);
                     }
                   }}
                   className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
@@ -157,7 +179,7 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
           <Card>
             <h3 className="text-sm font-medium text-gray-subtext mb-3">Content Type</h3>
             <div className="grid grid-cols-4 gap-3">
-              {(['text', 'image', 'video', 'carousel'] as const).map(type => (
+              {(['text', 'image', 'video', 'carousel'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setMediaType(type)}
@@ -167,8 +189,16 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
                       : 'bg-dark-bg text-gray-subtext hover:bg-dark-border'
                   }`}
                 >
-                  <MaterialIcon 
-                    name={type === 'text' ? 'text_fields' : type === 'image' ? 'image' : type === 'video' ? 'videocam' : 'view_carousel'} 
+                  <MaterialIcon
+                    name={
+                      type === 'text'
+                        ? 'text_fields'
+                        : type === 'image'
+                          ? 'image'
+                          : type === 'video'
+                            ? 'videocam'
+                            : 'view_carousel'
+                    }
                     className="text-2xl mb-1"
                   />
                   <p className="text-xs capitalize">{type}</p>
@@ -190,13 +220,16 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
               />
               {selectedFile && fileSizeErrors.length === 0 && (
                 <p className="mt-2 text-xs text-green-400">
-                  {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB) — within limits for all selected platforms
+                  {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB) — within
+                  limits for all selected platforms
                 </p>
               )}
               {fileSizeErrors.length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {fileSizeErrors.map((err) => (
-                    <li key={err} className="text-xs text-red-400">{err}</li>
+                    <li key={err} className="text-xs text-red-400">
+                      {err}
+                    </li>
                   ))}
                 </ul>
               )}
@@ -206,7 +239,7 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
           {/* Caption */}
           <Card>
             <h3 className="text-lg font-semibold text-white mb-4">Caption</h3>
-            <textarea 
+            <textarea
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               className="w-full h-40 bg-dark-bg border border-dark-border rounded-2xl p-4 text-white focus:outline-none focus:ring-2 focus:ring-primary-blue/50 resize-none"
@@ -214,10 +247,12 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
             />
             <div className="mt-3 flex justify-between items-center text-xs">
               <span className={isOverLimit ? 'text-red-400 font-semibold' : 'text-gray-subtext'}>
-                {caption.length}{strictestLimit !== Infinity ? `/${strictestLimit}` : ''} characters • {hashtags.length} hashtags
+                {caption.length}
+                {strictestLimit !== Infinity ? `/${strictestLimit}` : ''} characters •{' '}
+                {hashtags.length} hashtags
                 {overLimitPlatforms.length > 0 && (
                   <span className="ml-2">
-                    — over limit for: {overLimitPlatforms.map(p => p.platform).join(', ')}
+                    — over limit for: {overLimitPlatforms.map((p) => p.platform).join(', ')}
                   </span>
                 )}
               </span>
@@ -236,7 +271,7 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-subtext mb-2">Date</label>
-                <input 
+                <input
                   type="date"
                   value={scheduleDate}
                   onChange={(e) => setScheduleDate(e.target.value)}
@@ -246,7 +281,7 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-subtext mb-2">Time</label>
-                <input 
+                <input
                   type="time"
                   value={scheduleTime}
                   onChange={(e) => setScheduleTime(e.target.value)}
@@ -278,15 +313,16 @@ export const CreatePostWithReachAnalysis: React.FC<ViewProps> = ({ onNavigate })
             )}
           </Card>
 
-          <button 
+          <button
+            onClick={handleSchedulePost}
             disabled={isOverLimit || fileSizeErrors.length > 0}
             className="w-full bg-primary-blue text-white px-6 py-3 rounded-2xl text-sm font-medium hover:bg-blue-700 shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary-blue"
           >
             {isOverLimit
-              ? `Over character limit (${overLimitPlatforms.map(p => p.platform).join(', ')})`
+              ? `Over character limit (${overLimitPlatforms.map((p) => p.platform).join(', ')})`
               : fileSizeErrors.length > 0
-              ? 'File exceeds platform size limit'
-              : 'Schedule Post'}
+                ? 'File exceeds platform size limit'
+                : 'Schedule Post'}
           </button>
         </div>
 

@@ -7,3 +7,8 @@ const { webcrypto } = require('crypto');
 if (!global.crypto) {
   global.crypto = webcrypto;
 }
+
+if (typeof globalThis.jest === 'undefined' && typeof globalThis.vi !== 'undefined') {
+  globalThis.jest = globalThis.vi;
+}
+
