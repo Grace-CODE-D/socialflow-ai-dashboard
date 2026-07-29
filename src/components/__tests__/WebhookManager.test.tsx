@@ -1,24 +1,24 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import WebhookManager from '../WebhookManager';
 import { WebhooksService } from '../../api/services/WebhooksService';
 
-jest.mock('../../api/services/WebhooksService', () => ({
+vi.mock('../../api/services/WebhooksService', () => ({
   WebhooksService: {
-    getWebhooks: jest.fn(),
-    postWebhooks: jest.fn(),
-    deleteWebhooks: jest.fn(),
-    postWebhooksTest: jest.fn(),
-    getWebhooksDeliveries: jest.fn(),
-    postWebhooksDeliveriesReplay: jest.fn(),
+    getWebhooks: vi.fn(),
+    postWebhooks: vi.fn(),
+    deleteWebhooks: vi.fn(),
+    postWebhooksTest: vi.fn(),
+    getWebhooksDeliveries: vi.fn(),
+    postWebhooksDeliveriesReplay: vi.fn(),
   },
 }));
 
-const mockSvc = WebhooksService as jest.Mocked<typeof WebhooksService>;
+const mockSvc = WebhooksService as any;
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockSvc.getWebhooks.mockResolvedValue([
     { id: 'wh1', url: 'https://hooks.example.com/a', events: ['post.published'], isActive: true, createdAt: '2026-01-01T00:00:00Z' },
   ]);
@@ -60,7 +60,7 @@ test('creating a webhook calls WebhooksService.postWebhooks with the form data',
 
 test('deleting a webhook calls WebhooksService.deleteWebhooks with the webhook id', async () => {
   mockSvc.deleteWebhooks.mockResolvedValue(undefined);
-  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
 
   render(<WebhookManager />);
   await screen.findByText('https://hooks.example.com/a');

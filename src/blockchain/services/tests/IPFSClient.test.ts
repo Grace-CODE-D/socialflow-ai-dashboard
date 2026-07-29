@@ -2,7 +2,7 @@
 
 // Stub out browser-only APIs before importing the module
 const mockIndexedDB = {
-  open: jest.fn(),
+  open: vi.fn(),
 };
 Object.defineProperty(global, 'indexedDB', { value: mockIndexedDB, writable: true });
 
@@ -66,64 +66,64 @@ describe('IPFSClient', () => {
 
   describe('sleep', () => {
     it('resolves after given ms', async () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const promise = sleep(100);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       await expect(promise).resolves.toBeUndefined();
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
   describe('retryWithBackoff', () => {
     it('returns value on first success', async () => {
-      const fn = jest.fn().mockResolvedValue('ok');
-      jest.useFakeTimers();
+      const fn = vi.fn().mockResolvedValue('ok');
+      vi.useFakeTimers();
       const p = retryWithBackoff(fn, 3, 0);
-      jest.runAllTimers();
+      vi.runAllTimers();
       await expect(p).resolves.toBe('ok');
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('retries on failure and resolves on eventual success', async () => {
-      const fn = jest.fn()
+      const fn = vi.fn()
         .mockRejectedValueOnce(new Error('fail'))
         .mockResolvedValue('recovered');
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const p = retryWithBackoff(fn, 3, 0);
-      jest.runAllTimers();
+      vi.runAllTimers();
       await expect(p).resolves.toBe('recovered');
-      jest.useRealTimers();
+      vi.useRealTimers();
       expect(fn).toHaveBeenCalledTimes(2);
     });
 
     it('throws last error after all attempts fail', async () => {
       const err = new Error('always fails');
-      const fn = jest.fn().mockRejectedValue(err);
-      jest.useFakeTimers();
+      const fn = vi.fn().mockRejectedValue(err);
+      vi.useFakeTimers();
       const p = retryWithBackoff(fn, 2, 0);
-      jest.runAllTimers();
+      vi.runAllTimers();
       await expect(p).rejects.toThrow('always fails');
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
   describe('timeoutSignal', () => {
     it('returns a signal and a clear function', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const { signal, clear } = timeoutSignal(5000);
       expect(signal).toBeDefined();
       expect(typeof clear).toBe('function');
       clear();
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('signal is aborted after timeout', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const { signal } = timeoutSignal(100);
       expect(signal.aborted).toBe(false);
-      jest.advanceTimersByTime(101);
+      vi.advanceTimersByTime(101);
       expect(signal.aborted).toBe(true);
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 });

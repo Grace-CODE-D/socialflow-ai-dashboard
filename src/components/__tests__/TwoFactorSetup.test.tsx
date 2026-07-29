@@ -5,44 +5,44 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import TwoFactorSetup from '../TwoFactorSetup';
 import { twoFactorService } from '../../services/twoFactorService';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-jest.mock('../../services/twoFactorService', () => ({
+vi.mock('../../services/twoFactorService', () => ({
   twoFactorService: {
-    isEnabled: jest.fn(),
-    generateSecret: jest.fn(),
-    verifyToken: jest.fn(),
-    enable: jest.fn(),
-    disable: jest.fn(),
-    generateRecoveryCodes: jest.fn(),
-    storeRecoveryCodes: jest.fn(),
-    regenerateRecoveryCodes: jest.fn(),
-    verifyStoredToken: jest.fn(),
-    verifyRecoveryCode: jest.fn(),
-    resetFailedAttempts: jest.fn(),
+    isEnabled: vi.fn(),
+    generateSecret: vi.fn(),
+    verifyToken: vi.fn(),
+    enable: vi.fn(),
+    disable: vi.fn(),
+    generateRecoveryCodes: vi.fn(),
+    storeRecoveryCodes: vi.fn(),
+    regenerateRecoveryCodes: vi.fn(),
+    verifyStoredToken: vi.fn(),
+    verifyRecoveryCode: vi.fn(),
+    resetFailedAttempts: vi.fn(),
   },
   TwoFactorUnavailableError: class TwoFactorUnavailableError extends Error {},
 }));
 
-jest.mock('../QRCodeDisplay', () => ({
+vi.mock('../QRCodeDisplay', () => ({
   __esModule: true,
   default: ({ secret }: { secret: string }) => <div data-testid="qr-display">{secret}</div>,
 }));
 
-const mockSvc = twoFactorService as jest.Mocked<typeof twoFactorService>;
+const mockSvc = twoFactorService as any;
 
 const defaultProps = {
-  onSetupComplete: jest.fn(),
-  onDisableComplete: jest.fn(),
-  onCancel: jest.fn(),
+  onSetupComplete: vi.fn(),
+  onDisableComplete: vi.fn(),
+  onCancel: vi.fn(),
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockSvc.generateSecret.mockReturnValue({ secret: 'TESTSECRET', uri: 'otpauth://totp/SocialFlow:test?secret=TESTSECRET&issuer=SocialFlow' });
   mockSvc.generateRecoveryCodes.mockReturnValue(
     Array.from({ length: 8 }, (_, i) => ({ code: `CODE00000${i}`, consumed: false }))

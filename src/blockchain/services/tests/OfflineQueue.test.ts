@@ -1,12 +1,12 @@
 import { OfflineQueue } from '../OfflineQueue';
 
-function makeRedis(overrides: Record<string, jest.Mock> = {}) {
+function makeRedis(overrides: Record<string, vi.Mock> = {}) {
   return {
-    eval: jest.fn().mockResolvedValue(1),
-    hvals: jest.fn().mockResolvedValue([]),
-    hdel: jest.fn().mockResolvedValue(1),
-    hlen: jest.fn().mockResolvedValue(0),
-    del: jest.fn().mockResolvedValue(1),
+    eval: vi.fn().mockResolvedValue(1),
+    hvals: vi.fn().mockResolvedValue([]),
+    hdel: vi.fn().mockResolvedValue(1),
+    hlen: vi.fn().mockResolvedValue(0),
+    del: vi.fn().mockResolvedValue(1),
     ...overrides,
   };
 }
@@ -18,18 +18,18 @@ function makeRedis(overrides: Record<string, jest.Mock> = {}) {
 function makeAtomicRedis() {
   const store = new Map<string, string>();
   return {
-    eval: jest.fn((_script: string, _numKeys: number, _key: string, maxSize: number, field: string, value: string) => {
+    eval: vi.fn((_script: string, _numKeys: number, _key: string, maxSize: number, field: string, value: string) => {
       if (store.size >= Number(maxSize)) return Promise.resolve(0);
       store.set(field, value);
       return Promise.resolve(1);
     }),
-    hvals: jest.fn(() => Promise.resolve(Array.from(store.values()))),
-    hdel: jest.fn((_key: string, field: string) => {
+    hvals: vi.fn(() => Promise.resolve(Array.from(store.values()))),
+    hdel: vi.fn((_key: string, field: string) => {
       store.delete(field);
       return Promise.resolve(1);
     }),
-    hlen: jest.fn(() => Promise.resolve(store.size)),
-    del: jest.fn(() => {
+    hlen: vi.fn(() => Promise.resolve(store.size)),
+    del: vi.fn(() => {
       store.clear();
       return Promise.resolve(1);
     }),
@@ -95,14 +95,14 @@ describe('OfflineQueue', () => {
     });
 
     it('falls back to in-memory when redis.eval rejects', async () => {
-      const redis = makeRedis({ eval: jest.fn().mockRejectedValue(new Error('redis down')) });
+      const redis = makeRedis({ eval: vi.fn().mockRejectedValue(new Error('redis down')) });
       const q = new OfflineQueue(redis);
       const id = await q.queueTransaction('xdr-fallback');
       expect(typeof id).toBe('string');
     });
 
     it('throws without falling back when the queue is reported full', async () => {
-      const redis = makeRedis({ eval: jest.fn().mockResolvedValue(0) });
+      const redis = makeRedis({ eval: vi.fn().mockResolvedValue(0) });
       const q = new OfflineQueue(redis, 1);
       await expect(q.queueTransaction('xdr-full')).rejects.toThrow(/full/);
     });
@@ -131,14 +131,14 @@ describe('OfflineQueue', () => {
 
     it('parses items from the redis hash', async () => {
       const entry = { id: 'tx_1', xdr: 'xdr-r', timestamp: Date.now() };
-      const redis = makeRedis({ hvals: jest.fn().mockResolvedValue([JSON.stringify(entry)]) });
+      const redis = makeRedis({ hvals: vi.fn().mockResolvedValue([JSON.stringify(entry)]) });
       const q = new OfflineQueue(redis);
       const txs = await q.getQueuedTransactions();
       expect(txs[0].xdr).toBe('xdr-r');
     });
 
     it('falls back to in-memory when redis.hvals rejects', async () => {
-      const redis = makeRedis({ hvals: jest.fn().mockRejectedValue(new Error('redis fail')) });
+      const redis = makeRedis({ hvals: vi.fn().mockRejectedValue(new Error('redis fail')) });
       const q = new OfflineQueue(redis);
       await q.queueTransaction('xdr-mem');
       const txs = await q.getQueuedTransactions();
@@ -188,13 +188,13 @@ describe('OfflineQueue', () => {
     });
 
     it('returns redis hlen value', async () => {
-      const redis = makeRedis({ hlen: jest.fn().mockResolvedValue(5) });
+      const redis = makeRedis({ hlen: vi.fn().mockResolvedValue(5) });
       const q = new OfflineQueue(redis);
       expect(await q.getQueueSize()).toBe(5);
     });
 
     it('falls back to in-memory when redis.hlen rejects', async () => {
-      const redis = makeRedis({ hlen: jest.fn().mockRejectedValue(new Error('fail')) });
+      const redis = makeRedis({ hlen: vi.fn().mockRejectedValue(new Error('fail')) });
       const q = new OfflineQueue(redis);
       expect(await q.getQueueSize()).toBe(0);
     });
@@ -208,7 +208,7 @@ describe('OfflineQueue', () => {
 
     it('populates in-memory queue from redis', async () => {
       const entry = { id: 'tx_restore', xdr: 'xdr-restored', timestamp: Date.now() };
-      const redis = makeRedis({ hvals: jest.fn().mockResolvedValue([JSON.stringify(entry)]) });
+      const redis = makeRedis({ hvals: vi.fn().mockResolvedValue([JSON.stringify(entry)]) });
       const q = new OfflineQueue(redis);
       await q.restoreFromRedis();
       const txs = await q.getQueuedTransactions();
@@ -216,7 +216,7 @@ describe('OfflineQueue', () => {
     });
 
     it('does not throw when redis.hvals rejects during restore', async () => {
-      const redis = makeRedis({ hvals: jest.fn().mockRejectedValue(new Error('down')) });
+      const redis = makeRedis({ hvals: vi.fn().mockRejectedValue(new Error('down')) });
       const q = new OfflineQueue(redis);
       await expect(q.restoreFromRedis()).resolves.toBeUndefined();
     });

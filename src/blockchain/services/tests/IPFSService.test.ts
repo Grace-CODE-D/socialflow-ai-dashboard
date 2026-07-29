@@ -1,19 +1,19 @@
 // @jest-environment node
 
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-jest.mock('../IPFSClient', () => {
-  const actual = jest.requireActual('../IPFSClient');
+vi.mock('../IPFSClient', () => {
+  const actual = vi.requireActual('../IPFSClient');
   return {
     ...actual,
-    idbGet: jest.fn().mockResolvedValue(null),
-    idbPut: jest.fn().mockResolvedValue(undefined),
-    idbAll: jest.fn().mockResolvedValue([]),
-    idbDelete: jest.fn().mockResolvedValue(undefined),
-    openDb: jest.fn().mockResolvedValue({}),
-    timeoutSignal: jest.fn().mockReturnValue({ signal: { aborted: false }, clear: jest.fn() }),
-    retryWithBackoff: jest.fn().mockImplementation((fn: () => Promise<any>) => fn()),
+    idbGet: vi.fn().mockResolvedValue(null),
+    idbPut: vi.fn().mockResolvedValue(undefined),
+    idbAll: vi.fn().mockResolvedValue([]),
+    idbDelete: vi.fn().mockResolvedValue(undefined),
+    openDb: vi.fn().mockResolvedValue({}),
+    timeoutSignal: vi.fn().mockReturnValue({ signal: { aborted: false }, clear: vi.fn() }),
+    retryWithBackoff: vi.fn().mockImplementation((fn: () => Promise<any>) => fn()),
   };
 });
 
@@ -29,7 +29,7 @@ function jsonReply(body: object, ok = true) {
   } as any);
 }
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 describe('IPFSService', () => {
   describe('constructor', () => {

@@ -5,30 +5,30 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import TwoFactorLogin from '../TwoFactorLogin';
 import { twoFactorService } from '../../services/twoFactorService';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-jest.mock('../../services/twoFactorService', () => ({
+vi.mock('../../services/twoFactorService', () => ({
   twoFactorService: {
-    verifyStoredToken: jest.fn(),
-    verifyRecoveryCode: jest.fn(),
-    getRemainingRecoveryCodeCount: jest.fn(),
-    recordFailedAttempt: jest.fn(),
-    resetFailedAttempts: jest.fn(),
-    isLockedOut: jest.fn(),
-    getLockoutRemainingMs: jest.fn(),
-    isEnabled: jest.fn(),
+    verifyStoredToken: vi.fn(),
+    verifyRecoveryCode: vi.fn(),
+    getRemainingRecoveryCodeCount: vi.fn(),
+    recordFailedAttempt: vi.fn(),
+    resetFailedAttempts: vi.fn(),
+    isLockedOut: vi.fn(),
+    getLockoutRemainingMs: vi.fn(),
+    isEnabled: vi.fn(),
   },
   TwoFactorUnavailableError: class TwoFactorUnavailableError extends Error {},
 }));
 
-const mockSvc = twoFactorService as jest.Mocked<typeof twoFactorService>;
+const mockSvc = twoFactorService as any;
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockSvc.isLockedOut.mockResolvedValue(false);
   mockSvc.getLockoutRemainingMs.mockResolvedValue(0);
   mockSvc.getRemainingRecoveryCodeCount.mockResolvedValue(8);
@@ -36,14 +36,14 @@ beforeEach(() => {
 
 describe('TwoFactorLogin', () => {
   test('renders TOTP input by default', () => {
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     expect(screen.getByPlaceholderText('6-digit code')).toBeInTheDocument();
     expect(screen.getByText('Use a recovery code')).toBeInTheDocument();
   });
 
   test('calls onSuccess when valid TOTP token submitted', async () => {
     mockSvc.verifyStoredToken.mockResolvedValue(true);
-    const onSuccess = jest.fn();
+    const onSuccess = vi.fn();
     render(<TwoFactorLogin onSuccess={onSuccess} />);
     fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '123456' } });
     fireEvent.click(screen.getByText('Verify'));
@@ -53,7 +53,7 @@ describe('TwoFactorLogin', () => {
 
   test('shows error and records failed attempt on invalid TOTP token', async () => {
     mockSvc.verifyStoredToken.mockResolvedValue(false);
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '000000' } });
     fireEvent.click(screen.getByText('Verify'));
     await waitFor(() =>
@@ -68,7 +68,7 @@ describe('TwoFactorLogin', () => {
       mockSvc.isLockedOut.mockResolvedValue(true);
       mockSvc.getLockoutRemainingMs.mockResolvedValue(300_000);
     });
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '000000' } });
     fireEvent.click(screen.getByText('Verify'));
     await waitFor(() => expect(screen.getByText(/Too many failed attempts/)).toBeInTheDocument());
@@ -77,13 +77,13 @@ describe('TwoFactorLogin', () => {
   test('disables input when locked out', async () => {
     mockSvc.isLockedOut.mockResolvedValue(true);
     mockSvc.getLockoutRemainingMs.mockResolvedValue(300_000);
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     await waitFor(() => expect(screen.getByPlaceholderText('6-digit code')).toBeDisabled());
     expect(screen.getByText(/Input locked/)).toBeInTheDocument();
   });
 
   test('switches to recovery code mode', () => {
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
     expect(screen.getByPlaceholderText('Recovery code')).toBeInTheDocument();
     expect(screen.getByText('Use authenticator app')).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe('TwoFactorLogin', () => {
 
   test('calls onSuccess when valid recovery code submitted', async () => {
     mockSvc.verifyRecoveryCode.mockResolvedValue(true);
-    const onSuccess = jest.fn();
+    const onSuccess = vi.fn();
     render(<TwoFactorLogin onSuccess={onSuccess} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
     fireEvent.change(screen.getByPlaceholderText('Recovery code'), {
@@ -104,7 +104,7 @@ describe('TwoFactorLogin', () => {
   test('shows all-codes-consumed message when no recovery codes remain', async () => {
     mockSvc.verifyRecoveryCode.mockResolvedValue(false);
     mockSvc.getRemainingRecoveryCodeCount.mockResolvedValue(0);
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
     fireEvent.change(screen.getByPlaceholderText('Recovery code'), {
       target: { value: 'XXXXXXXXXX' },
@@ -114,7 +114,7 @@ describe('TwoFactorLogin', () => {
   });
 
   test('switches back to TOTP mode from recovery mode', () => {
-    render(<TwoFactorLogin onSuccess={jest.fn()} />);
+    render(<TwoFactorLogin onSuccess={vi.fn()} />);
     fireEvent.click(screen.getByText('Use a recovery code'));
     fireEvent.click(screen.getByText('Use authenticator app'));
     expect(screen.getByPlaceholderText('6-digit code')).toBeInTheDocument();
