@@ -1,26 +1,26 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { SettingsPage } from '../SettingsPage';
 
-jest.mock('../../components/TwoFactorSetup', () => ({ __esModule: true, default: () => <div /> }));
-jest.mock('../../components/TranslationPanel', () => ({ TranslationPanel: () => <div /> }));
-jest.mock('../../components/WebhookManager', () => ({ __esModule: true, default: () => <div /> }));
+vi.mock('../../components/TwoFactorSetup', () => ({ __esModule: true, default: () => <div /> }));
+vi.mock('../../components/TranslationPanel', () => ({ TranslationPanel: () => <div /> }));
+vi.mock('../../components/WebhookManager', () => ({ __esModule: true, default: () => <div /> }));
 
-jest.mock('../../contexts/AuthContext', () => ({
+vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ user: { name: 'Alex Morgan', email: 'alex@socialflow.ai', plan: 'Pro Plan' } }),
 }));
 
-const toastMock = jest.fn();
-jest.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ toast: toastMock }) }));
+const toastMock = vi.fn();
+vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ toast: toastMock }) }));
 
-const changePasswordMock = jest.fn();
-jest.mock('../../hooks/usePasswordRotation', () => ({
+const changePasswordMock = vi.fn();
+vi.mock('../../hooks/usePasswordRotation', () => ({
   usePasswordRotation: () => ({ changePassword: changePasswordMock, isLoading: false, error: null }),
 }));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 function fillPasswordForm(container: HTMLElement, current: string, next: string) {

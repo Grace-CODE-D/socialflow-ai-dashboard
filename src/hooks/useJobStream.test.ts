@@ -32,12 +32,12 @@ class MockEventSource {
 (global as unknown as { EventSource: typeof MockEventSource }).EventSource = MockEventSource;
 
 // Mock fetch for SSE ticket endpoint
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
 beforeEach(() => {
   MockEventSource.instances = [];
-  jest.useFakeTimers();
+  vi.useFakeTimers();
 
   // Default mock response for SSE ticket endpoint
   mockFetch.mockResolvedValue({
@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
   mockFetch.mockClear();
 });
 
@@ -57,7 +57,7 @@ test('updates job state from progress events', async () => {
   // Wait for ticket fetch and EventSource to be created
   await act(async () => {
     await Promise.resolve(); // flush promises
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   act(() => {
@@ -78,7 +78,7 @@ test('fetches SSE ticket before connecting', async () => {
 
   await act(async () => {
     await Promise.resolve(); // flush promises
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   expect(mockFetch).toHaveBeenCalledWith(
@@ -95,7 +95,7 @@ test('uses SSE ticket instead of JWT in EventSource URL', async () => {
 
   await act(async () => {
     await Promise.resolve(); // flush promises
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   const esUrl = MockEventSource.instances[0].url;
@@ -109,7 +109,7 @@ test('reconnects with backoff and resumes from last event id', async () => {
 
   await act(async () => {
     await Promise.resolve();
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   act(() => {
@@ -128,16 +128,16 @@ test('reconnects with backoff and resumes from last event id', async () => {
   });
 
   await act(async () => {
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
     await Promise.resolve(); // flush promises for new ticket fetch
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   expect(MockEventSource.instances[1].url).toContain('lastEventId=evt-1');
 });
 
 test('reverts optimistic pending state and surfaces an error on a failed retry response', async () => {
-  const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500 } as Response);
+  const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response);
   (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
 
   const { result } = renderHook(() => useJobStream('token'));
@@ -171,15 +171,15 @@ test('stops reconnecting after maxRetries', async () => {
 
   await act(async () => {
     await Promise.resolve();
-    jest.runAllTimers();
+    vi.runAllTimers();
   });
 
   await act(async () => {
     for (let i = 0; i < 3; i += 1) {
       MockEventSource.instances[MockEventSource.instances.length - 1].onerror?.();
-      jest.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(60_000);
       await Promise.resolve();
-      jest.runAllTimers();
+      vi.runAllTimers();
     }
   });
 

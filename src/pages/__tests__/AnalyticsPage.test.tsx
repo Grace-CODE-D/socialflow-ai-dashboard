@@ -5,20 +5,20 @@
  */
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { AnalyticsPage } from '../AnalyticsPage';
 import { AnalyticsService } from '../../api/services/AnalyticsService';
 
-jest.mock('../../api/services/AnalyticsService', () => ({
+vi.mock('../../api/services/AnalyticsService', () => ({
   AnalyticsService: {
-    getAnalytics: jest.fn(),
+    getAnalytics: vi.fn(),
   },
 }));
 
-const mockGetAnalytics = AnalyticsService.getAnalytics as jest.Mock;
+const mockGetAnalytics = AnalyticsService.getAnalytics as any;
 
 describe('AnalyticsPage', () => {
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => vi.clearAllMocks());
 
   it('calls the real analytics API on mount', async () => {
     mockGetAnalytics.mockResolvedValueOnce({
