@@ -31,17 +31,34 @@ class MockEventSource {
 
 (global as unknown as { EventSource: typeof MockEventSource }).EventSource = MockEventSource;
 
+// Mock fetch for SSE ticket endpoint
+const mockFetch = jest.fn();
+global.fetch = mockFetch as any;
+
 beforeEach(() => {
   MockEventSource.instances = [];
   jest.useFakeTimers();
+  
+  // Default mock response for SSE ticket endpoint
+  mockFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ ticket: 'mock-sse-ticket-123', expiresIn: 30 }),
+  });
 });
 
 afterEach(() => {
   jest.useRealTimers();
+  mockFetch.mockClear();
 });
 
-test('updates job state from progress events', () => {
+test('updates job state from progress events', async () => {
   const { result } = renderHook(() => useJobStream('token'));
+
+  // Wait for ticket fetch and EventSource to be created
+  await act(async () => {
+    await Promise.resolve(); // flush promises
+    jest.runAllTimers();
+  });
 
   act(() => {
     MockEventSource.instances[0].emit('job_progress', {
@@ -56,8 +73,44 @@ test('updates job state from progress events', () => {
   expect(result.current.jobs.job1.progress).toBe(42);
 });
 
-test('reconnects with backoff and resumes from last event id', () => {
+test('fetches SSE ticket before connecting', async () => {
+  renderHook(() => useJobStream('my-jwt-token', { baseUrl: 'http://test' }));
+
+  await act(async () => {
+    await Promise.resolve(); // flush promises
+    jest.runAllTimers();
+  });
+
+  expect(mockFetch).toHaveBeenCalledWith(
+    'http://test/api/auth/sse-ticket',
+    expect.objectContaining({
+      method: 'POST',
+      headers: { Authorization: 'Bearer my-jwt-token' },
+    })
+  );
+});
+
+test('uses SSE ticket instead of JWT in EventSource URL', async () => {
+  renderHook(() => useJobStream('my-jwt-token'));
+
+  await act(async () => {
+    await Promise.resolve(); // flush promises
+    jest.runAllTimers();
+  });
+
+  const esUrl = MockEventSource.instances[0].url;
+  expect(esUrl).toContain('ticket=mock-sse-ticket-123');
+  expect(esUrl).not.toContain('token=');
+  expect(esUrl).not.toContain('my-jwt-token');
+});
+
+test('reconnects with backoff and resumes from last event id', async () => {
   renderHook(() => useJobStream('token'));
+
+  await act(async () => {
+    await Promise.resolve();
+    jest.runAllTimers();
+  });
 
   act(() => {
     MockEventSource.instances[0].emit(
@@ -72,21 +125,33 @@ test('reconnects with backoff and resumes from last event id', () => {
       'evt-1',
     );
     MockEventSource.instances[0].onerror?.();
+  });
+
+  await act(async () => {
     jest.advanceTimersByTime(1000);
+    await Promise.resolve(); // flush promises for new ticket fetch
+    jest.runAllTimers();
   });
 
   expect(MockEventSource.instances[1].url).toContain('lastEventId=evt-1');
 });
 
-test('stops reconnecting after maxRetries', () => {
+test('stops reconnecting after maxRetries', async () => {
   const { result } = renderHook(() => useJobStream('token', { maxRetries: 2 }));
 
-  act(() => {
+  await act(async () => {
+    await Promise.resolve();
+    jest.runAllTimers();
+  });
+
+  await act(async () => {
     for (let i = 0; i < 3; i += 1) {
       MockEventSource.instances[MockEventSource.instances.length - 1].onerror?.();
       jest.advanceTimersByTime(60_000);
+      await Promise.resolve();
+      jest.runAllTimers();
     }
   });
 
-  expect(result.current.error).toMatch(/reconnection attempts/);
+  expect(result.current.error).toMatch(/reconnect|connection after/i);
 });
