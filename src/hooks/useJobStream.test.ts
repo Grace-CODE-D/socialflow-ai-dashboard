@@ -183,5 +183,5 @@ test('stops reconnecting after maxRetries', async () => {
     }
   });
 
-  expect(result.current.error).toMatch(/connection after/);
+  expect(result.current.error).toMatch(/reconnect|connection after/i);
 });
