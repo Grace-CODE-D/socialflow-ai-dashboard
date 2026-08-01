@@ -3,17 +3,17 @@ import { WalletService } from '../WalletService';
 function setupFreighter(publicKey = 'GFREIGHTER', rejects = false) {
   (window as any).freighter = {
     getPublicKey: rejects
-      ? jest.fn().mockRejectedValue(new Error('user rejected'))
-      : jest.fn().mockResolvedValue(publicKey),
-    signTransaction: jest.fn().mockResolvedValue('signed-xdr'),
-    on: jest.fn(),
+      ? vi.fn().mockRejectedValue(new Error('user rejected'))
+      : vi.fn().mockResolvedValue(publicKey),
+    signTransaction: vi.fn().mockResolvedValue('signed-xdr'),
+    on: vi.fn(),
   };
 }
 
 function setupAlbedo(publicKey = 'GALBEDO') {
   (window as any).albedo = {
-    publicKey: jest.fn().mockResolvedValue({ publicKey }),
-    tx: jest.fn().mockResolvedValue({ signed_envelope_xdr: 'albedo-signed' }),
+    publicKey: vi.fn().mockResolvedValue({ publicKey }),
+    tx: vi.fn().mockResolvedValue({ signed_envelope_xdr: 'albedo-signed' }),
   };
 }
 
@@ -24,7 +24,7 @@ function clearWallets() {
 
 afterEach(() => {
   clearWallets();
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('WalletService', () => {
@@ -97,7 +97,7 @@ describe('WalletService', () => {
 
     it('throws when Freighter.signTransaction rejects with network error', async () => {
       setupFreighter('GSIGNER');
-      (window as any).freighter.signTransaction = jest.fn().mockRejectedValue(new Error('network'));
+      (window as any).freighter.signTransaction = vi.fn().mockRejectedValue(new Error('network'));
       const svc = new WalletService();
       await svc.autoConnect();
       await expect(svc.signTransaction('raw-xdr', 'testnet')).rejects.toThrow('network');
@@ -110,7 +110,7 @@ describe('WalletService', () => {
       const svc = new WalletService();
       await svc.autoConnect();
 
-      const listener = jest.fn();
+      const listener = vi.fn();
       svc.onDisconnect(listener);
       svc.disconnect();
 
@@ -122,7 +122,7 @@ describe('WalletService', () => {
       setupFreighter('GUNSUB');
       const svc = new WalletService();
       await svc.autoConnect();
-      const unsub = svc.onDisconnect(jest.fn());
+      const unsub = svc.onDisconnect(vi.fn());
       expect(typeof unsub).toBe('function');
       expect(() => unsub()).not.toThrow();
     });
@@ -133,12 +133,12 @@ describe('WalletService', () => {
   // ═════════════════════════════════════════════════════════════════════════
 
   describe('visibilitychange listener cleanup (#1249)', () => {
-    let addEventListenerSpy: jest.SpyInstance;
-    let removeEventListenerSpy: jest.SpyInstance;
+    let addEventListenerSpy: vi.SpyInstance;
+    let removeEventListenerSpy: vi.SpyInstance;
 
     beforeEach(() => {
-      addEventListenerSpy = jest.spyOn(window, 'addEventListener');
-      removeEventListenerSpy = jest.spyOn(window, 'removeEventListener');
+      addEventListenerSpy = vi.spyOn(window, 'addEventListener');
+      removeEventListenerSpy = vi.spyOn(window, 'removeEventListener');
     });
 
     afterEach(() => {

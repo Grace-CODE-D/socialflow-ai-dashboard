@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { twoFactorService } from '../services/twoFactorService';
+import TwoFactorLogin from '../components/TwoFactorLogin';
 
 const MaterialIcon = ({ name, className }: { name: string; className?: string }) => (
   <span className={`material-symbols-outlined ${className}`}>{name}</span>
@@ -12,15 +14,39 @@ export const LoginPage: React.FC = () => {
   const { toast } = useToast();
   const [email, setEmail] = useState('alex@socialflow.ai');
   const [password, setPassword] = useState('demo1234');
+  const [pendingCredentials, setPendingCredentials] = useState<{ email: string; password: string } | null>(null);
+
+  const completeLogin = async (loginEmail: string, loginPassword: string) => {
+    try {
+      await login(loginEmail, loginPassword);
+      toast('Welcome back to SocialFlow AI.', 'success');
+    } catch (err) {
+      setPendingCredentials(null);
+      toast(err instanceof Error ? err.message : 'Login failed.', 'error');
+    }
+  };
+
+  // If 2FA is enabled, show the 2FA prompt after credentials are submitted
+  if (pendingCredentials !== null) {
+    return (
+      <TwoFactorLogin
+        onSuccess={() => completeLogin(pendingCredentials.email, pendingCredentials.password)}
+      />
+    );
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
-      toast('Enter your email to continue.', 'error');
+    if (!email.trim() || !password) {
+      toast('Enter your email and password to continue.', 'error');
       return;
     }
-    login(email.trim());
-    toast('Welcome back to SocialFlow AI.', 'success');
+    if (twoFactorService.isEnabled()) {
+      // Park the credentials and show the 2FA screen before completing login
+      setPendingCredentials({ email: email.trim(), password });
+    } else {
+      completeLogin(email.trim(), password);
+    }
   };
 
   return (
@@ -76,10 +102,6 @@ export const LoginPage: React.FC = () => {
             Sign In
           </button>
         </form>
-
-        <p className="mt-6 text-center text-[11px] text-gray-subtext">
-          Demo workspace · any email + password works
-        </p>
       </motion.div>
     </div>
   );

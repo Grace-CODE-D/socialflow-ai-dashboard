@@ -10,6 +10,13 @@ const router = Router();
 
 const UPLOAD_BASE = path.resolve(process.cwd(), 'uploads');
 
+const mimeToExt: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(process.cwd(), 'uploads', 'images');
@@ -17,7 +24,8 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    const ext = mimeToExt[file.mimetype] ?? '.bin';
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
   },
 });
 
@@ -84,37 +92,43 @@ const upload = multer({
  *         description: No image provided
  */
 // Required permission: posts:create
-router.post('/upload', authMiddleware, checkPermission('posts:create'), upload.single('image'), async (req: Request, res: Response) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image provided' });
+router.post(
+  '/upload',
+  authMiddleware,
+  checkPermission('posts:create'),
+  upload.single('image'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No image provided' });
+      }
+
+      const { width, height, quality, format } = req.query;
+      const options = {
+        width: width ? parseInt(width as string) : undefined,
+        height: height ? parseInt(height as string) : undefined,
+        quality: quality ? parseInt(quality as string) : 80,
+        format: (format as 'webp' | 'jpeg' | 'png') || 'webp',
+      };
+
+      const {
+        buffer,
+        format: resultFormat,
+        cacheKey,
+        etag,
+      } = await ImageOptimizationService.optimize(req.file.path, options);
+
+      res.setHeader('Content-Type', `image/${resultFormat}`);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('ETag', etag);
+      res.setHeader('X-Cache-Key', cacheKey);
+      res.send(buffer);
+    } catch (error) {
+      console.error('Image optimization error:', error);
+      res.status(500).json({ error: 'Failed to optimize image' });
     }
-
-    const { width, height, quality, format } = req.query;
-    const options = {
-      width: width ? parseInt(width as string) : undefined,
-      height: height ? parseInt(height as string) : undefined,
-      quality: quality ? parseInt(quality as string) : 80,
-      format: (format as 'webp' | 'jpeg' | 'png') || 'webp',
-    };
-
-    const {
-      buffer,
-      format: resultFormat,
-      cacheKey,
-      etag,
-    } = await ImageOptimizationService.optimize(req.file.path, options);
-
-    res.setHeader('Content-Type', `image/${resultFormat}`);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('ETag', etag);
-    res.setHeader('X-Cache-Key', cacheKey);
-    res.send(buffer);
-  } catch (error) {
-    console.error('Image optimization error:', error);
-    res.status(500).json({ error: 'Failed to optimize image' });
-  }
-});
+  },
+);
 
 /**
  * @openapi
@@ -221,7 +235,7 @@ router.get('/cache/size', async (req: Request, res: Response) => {
   try {
     const size = await ImageOptimizationService.getCacheSize();
     res.json({ cacheSize: size, cacheSizeMB: (size / 1024 / 1024).toFixed(2) });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ error: 'Failed to get cache size' });
   }
 });
@@ -237,13 +251,18 @@ router.get('/cache/size', async (req: Request, res: Response) => {
  *         description: Cache cleared
  */
 // Required permission: settings:manage
-router.delete('/cache', authMiddleware, checkPermission('settings:manage'), async (req: Request, res: Response) => {
-  try {
-    await ImageOptimizationService.clearCache();
-    res.json({ message: 'Cache cleared' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to clear cache' });
-  }
-});
+router.delete(
+  '/cache',
+  authMiddleware,
+  checkPermission('settings:manage'),
+  async (req: Request, res: Response) => {
+    try {
+      await ImageOptimizationService.clearCache();
+      res.json({ message: 'Cache cleared' });
+    } catch (_error) {
+      res.status(500).json({ error: 'Failed to clear cache' });
+    }
+  },
+);
 
 export default router;

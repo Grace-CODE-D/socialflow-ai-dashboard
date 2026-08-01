@@ -3,11 +3,11 @@ import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../middleware/authenticate';
 import { eventBus, JobProgressEvent } from '../lib/eventBus';
 import { createLogger } from '../lib/logger';
+import { config } from '../config/config';
 import { sseTicketService } from '../services/SSETicketService';
 
 const router = Router();
 const logger = createLogger('SSE');
-const JWT_SECRET = () => process.env.JWT_SECRET ?? 'change-me-in-production';
 
 /**
  * @openapi
@@ -64,7 +64,7 @@ router.get('/stream', (req: AuthRequest, res: Response) => {
     }
 
     try {
-      const payload = jwt.verify(token, JWT_SECRET()) as jwt.JwtPayload;
+      const payload = jwt.verify(token, config.JWT_SECRET) as jwt.JwtPayload;
       userId = payload.sub as string;
     } catch {
       res.status(401).json({ message: 'Invalid or expired token' });

@@ -1,7 +1,7 @@
 // @ts-expect-error - stellar-sdk exports CommonJS module without proper ESM type definitions
 import StellarSdk from '@stellar/stellar-sdk';
 const { Server, TransactionBuilder, Asset, Operation, Transaction, FeeBumpTransaction } = StellarSdk;
-import { NetworkConfig, DEFAULT_NETWORK } from '../config/networks';
+import { NetworkConfig, NETWORKS, DEFAULT_NETWORK } from '../config/networks';
 import { OfflineQueue } from './OfflineQueue';
 import { AppError } from '../../utils/AppError';
 import { ErrorCode } from '../../constants/ErrorCodes';
@@ -22,7 +22,7 @@ export class StellarService {
 
   constructor(initialConfig: NetworkConfig = DEFAULT_NETWORK, redisClient?: any) {
     this.config = initialConfig;
-    this.pool = this.initializePool(this.config.horizonUrl);
+    this.pool = this.initializePool(this.config);
     this.offlineQueue = new OfflineQueue(redisClient);
     // Restore any transactions queued before the last restart
     this.offlineQueue.restoreFromRedis().catch((err) =>
@@ -31,31 +31,49 @@ export class StellarService {
   }
 
   // --- 2.2 Connection Management ---
-  // Fallback Horizon endpoints provide real redundancy; primary URL is always first.
-  private static readonly FALLBACK_HORIZON_URLS = [
-    'https://horizon.stellar.org',
-    'https://horizon-testnet.stellar.org',
-    'https://horizon-futurenet.stellar.org',
-  ];
+  // Fallback Horizon endpoints provide real redundancy, keyed by the network
+  // passphrase they actually serve so we never mix mainnet/testnet/futurenet.
+  private static readonly FALLBACK_HORIZON_URLS_BY_PASSPHRASE: Record<string, string[]> = {
+    [NETWORKS.MAINNET.networkPassphrase]: [NETWORKS.MAINNET.horizonUrl],
+    [NETWORKS.TESTNET.networkPassphrase]: [NETWORKS.TESTNET.horizonUrl],
+    [NETWORKS.FUTURENET.networkPassphrase]: [NETWORKS.FUTURENET.horizonUrl],
+  };
 
-  private initializePool(horizonUrl: string): typeof Server[] {
-    // Build a deduplicated list: primary URL first, then distinct fallbacks.
+  private initializePool(config: NetworkConfig): typeof Server[] {
+    // Build a deduplicated list: primary URL first, then distinct fallbacks
+    // that belong to the same network (matched by passphrase).
+    const fallbacks =
+      StellarService.FALLBACK_HORIZON_URLS_BY_PASSPHRASE[config.networkPassphrase] ?? [];
     const urls = [
-      horizonUrl,
-      ...StellarService.FALLBACK_HORIZON_URLS.filter((u) => u !== horizonUrl),
-    ].slice(0, 3);
+      config.horizonUrl,
+      ...fallbacks.filter((u) => u !== config.horizonUrl),
+    ];
     return urls.map((u) => new Server(u));
   }
 
   private getServer(): typeof Server {
-    const server = this.pool[this.currentServerIndex];
-    this.currentServerIndex = (this.currentServerIndex + 1) % this.pool.length;
-    return server;
+    return this.pool[this.currentServerIndex];
+  }
+
+  /** Runs `op` against the current server, only advancing to the next pool
+   * entry after an actual failure, and retrying against remaining servers. */
+  private async withServer<T>(op: (server: any) => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < this.pool.length; attempt++) {
+      try {
+        return await op(this.getServer());
+      } catch (error) {
+        lastError = error;
+        this.currentServerIndex = (this.currentServerIndex + 1) % this.pool.length;
+      }
+    }
+    throw lastError;
   }
 
   public setNetwork(newConfig: NetworkConfig): void {
     this.config = newConfig;
-    this.pool = this.initializePool(newConfig.horizonUrl);
+    this.currentServerIndex = 0;
+    this.pool = this.initializePool(newConfig);
   }
 
   public getNetwork(): NetworkConfig {
@@ -64,7 +82,7 @@ export class StellarService {
 
   public async getNetworkStatus(): Promise<boolean> {
     try {
-      const root = await this.getServer().root();
+      const root = await this.withServer<any>((server) => server.root());
       return !!root.core_version;
     } catch {
       return false;
@@ -74,7 +92,7 @@ export class StellarService {
   // --- 2.3 Account Operations ---
   public async getAccount(publicKey: string) {
     try {
-      return await this.getServer().loadAccount(publicKey);
+      return await this.withServer<any>((server) => server.loadAccount(publicKey));
     } catch (error) {
       throw new AppError(ErrorCode.ERR_NOT_FOUND, `Account not found or invalid: ${publicKey}`);
     }
@@ -105,7 +123,7 @@ export class StellarService {
       return this.cachedBaseFee;
     }
     try {
-      const feeStats = await this.getServer().feeStats();
+      const feeStats = await this.withServer<any>((server) => server.feeStats());
       this.cachedBaseFee = parseInt(feeStats.base_fee.toString(), 10);
       
       // Surge detection logic
@@ -158,7 +176,7 @@ export class StellarService {
     let attempt = 1;
     while (attempt <= maxAttempts) {
       try {
-        const response = await this.getServer().submitTransaction(signedTransaction);
+        const response = await this.withServer<any>((server) => server.submitTransaction(signedTransaction));
         return response;
       } catch (error: any) {
         if (attempt === maxAttempts) {

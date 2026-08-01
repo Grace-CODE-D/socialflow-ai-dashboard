@@ -1,10 +1,9 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../lib/logger';
+import { config } from '../config/config';
 
 const logger = createLogger('middleware:csrfProtection');
-
-const CSRF_SECRET = process.env.CSRF_SECRET ?? 'dev-csrf-secret-change-me';
 const SESSION_COOKIE = 'csrf_sid';
 const TOKEN_COOKIE = 'csrf_token';
 const TOKEN_HEADER = 'x-csrf-token';
@@ -27,7 +26,7 @@ function parseCookies(header?: string): Record<string, string> {
 
 /** Derive the CSRF token from the session ID — binds the token to its session. */
 function signSessionId(sessionId: string): string {
-  return crypto.createHmac('sha256', CSRF_SECRET).update(sessionId).digest('hex');
+  return crypto.createHmac('sha256', config.CSRF_SECRET).update(sessionId).digest('hex');
 }
 
 /**
@@ -46,9 +45,17 @@ function ensureCsrfSession(req: Request, res: Response, isProduction: boolean): 
   const sessionId = cookies[SESSION_COOKIE] ?? crypto.randomBytes(32).toString('hex');
 
   if (!cookies[SESSION_COOKIE]) {
-    res.cookie(SESSION_COOKIE, sessionId, { httpOnly: true, sameSite: 'lax', secure: isProduction });
+    res.cookie(SESSION_COOKIE, sessionId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProduction,
+    });
   }
-  res.cookie(TOKEN_COOKIE, signSessionId(sessionId), { httpOnly: false, sameSite: 'lax', secure: isProduction });
+  res.cookie(TOKEN_COOKIE, signSessionId(sessionId), {
+    httpOnly: false,
+    sameSite: 'lax',
+    secure: isProduction,
+  });
 }
 
 /**

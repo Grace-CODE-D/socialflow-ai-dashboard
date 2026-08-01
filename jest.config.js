@@ -6,14 +6,7 @@ module.exports = {
       preset: 'ts-jest',
       testEnvironment: 'jsdom',
       roots: ['<rootDir>/src'],
-      testMatch: [
-        '**/__tests__/**/*.test.ts',
-        '**/__tests__/**/*.test.tsx',
-        // #1249: WalletService tests live in blockchain/services/tests/
-        '**/blockchain/services/tests/**/*.test.ts',
-        // #1250: useJobStream test lives in src/hooks/
-        '**/hooks/**/*.test.ts',
-      ],
+      testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx', '**/*.test.ts', '**/*.test.tsx'],
       setupFiles: ['<rootDir>/jest.setup.js'],
       transformIgnorePatterns: [
         'node_modules/(?!(@scure|@noble|@otplib|otplib)/)',

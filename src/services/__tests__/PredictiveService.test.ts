@@ -7,9 +7,9 @@
  * the right payload, and passes the response through unchanged.
  */
 
-const mockRequest = jest.fn();
+const mockRequest = vi.fn();
 
-jest.mock('../../api/core/request', () => ({
+vi.mock('../../api/core/request', () => ({
   request: (...args: unknown[]) => mockRequest(...args),
 }));
 

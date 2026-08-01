@@ -1,20 +1,20 @@
 // @jest-environment node
 
-const mockGetAccount = jest.fn();
-const mockPrepareTransaction = jest.fn();
-const mockSendTransaction = jest.fn();
+const mockGetAccount = vi.fn();
+const mockPrepareTransaction = vi.fn();
+const mockSendTransaction = vi.fn();
 
-jest.mock('@stellar/stellar-sdk', () => {
-  const TransactionBuilder = jest.fn().mockImplementation(() => ({
-    addOperation: jest.fn().mockReturnThis(),
-    setTimeout: jest.fn().mockReturnThis(),
-    build: jest.fn().mockReturnValue({ toXDR: jest.fn().mockReturnValue('unsigned-xdr') }),
+vi.mock('@stellar/stellar-sdk', () => {
+  const TransactionBuilder = vi.fn().mockImplementation(() => ({
+    addOperation: vi.fn().mockReturnThis(),
+    setTimeout: vi.fn().mockReturnThis(),
+    build: vi.fn().mockReturnValue({ toXDR: vi.fn().mockReturnValue('unsigned-xdr') }),
   }));
-  (TransactionBuilder as any).fromXDR = jest.fn().mockReturnValue({ type: 'signedTx' });
+  (TransactionBuilder as any).fromXDR = vi.fn().mockReturnValue({ type: 'signedTx' });
 
   return {
     SorobanRpc: {
-      Server: jest.fn().mockImplementation(() => ({
+      Server: vi.fn().mockImplementation(() => ({
         getAccount: mockGetAccount,
         prepareTransaction: mockPrepareTransaction,
         sendTransaction: mockSendTransaction,
@@ -23,8 +23,8 @@ jest.mock('@stellar/stellar-sdk', () => {
         GetTransactionStatus: { SUCCESS: 'SUCCESS', FAILED: 'FAILED' },
       },
     },
-    Contract: jest.fn().mockImplementation(() => ({
-      call: jest.fn().mockReturnValue({ type: 'op' }),
+    Contract: vi.fn().mockImplementation(() => ({
+      call: vi.fn().mockReturnValue({ type: 'op' }),
     })),
     TransactionBuilder,
     BASE_FEE: '100',
@@ -40,7 +40,7 @@ const serverInstance = new (SorobanRpc.Server as any)('url');
 
 const baseParams: ContractInvocationParams = { contractId: 'CTEST', method: 'transfer', args: [] };
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 describe('SmartContractInvoker', () => {
   describe('constructor', () => {
@@ -53,7 +53,7 @@ describe('SmartContractInvoker', () => {
   describe('invoke — READ_ONLY', () => {
     it('returns simulation result for read-only call', async () => {
       const simResult = { success: true, result: 'val', events: [] };
-      const simulate = jest.fn().mockResolvedValue(simResult);
+      const simulate = vi.fn().mockResolvedValue(simResult);
       const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
       const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.READ_ONLY, undefined, simulate);
       expect(result.success).toBe(true);
@@ -61,7 +61,7 @@ describe('SmartContractInvoker', () => {
     });
 
     it('returns failure when simulation fails', async () => {
-      const simulate = jest.fn().mockResolvedValue({ success: false, error: 'gas exceeded' });
+      const simulate = vi.fn().mockResolvedValue({ success: false, error: 'gas exceeded' });
       const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
       const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.READ_ONLY, undefined, simulate);
       expect(result.success).toBe(false);
@@ -78,7 +78,7 @@ describe('SmartContractInvoker', () => {
 
   describe('invoke — STATE_CHANGING', () => {
     it('returns error when signTransaction is missing', async () => {
-      const simulate = jest.fn().mockResolvedValue({ success: true });
+      const simulate = vi.fn().mockResolvedValue({ success: true });
       const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
       const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, undefined, simulate);
       expect(result.success).toBe(false);
@@ -86,12 +86,12 @@ describe('SmartContractInvoker', () => {
     });
 
     it('submits transaction and returns poll result on success', async () => {
-      const simulate = jest.fn().mockResolvedValue({ success: true });
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
       const pollResult = { success: true, transactionHash: 'abc123' };
-      const poll = jest.fn().mockResolvedValue(pollResult);
+      const poll = vi.fn().mockResolvedValue(pollResult);
       mockGetAccount.mockResolvedValueOnce({ id: 'GSRC', sequenceNumber: () => '1' });
-      const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+      const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
       mockPrepareTransaction.mockResolvedValueOnce(prepTx);
       mockSendTransaction.mockResolvedValueOnce({ status: 'PENDING', hash: 'abc123' });
 
@@ -102,13 +102,13 @@ describe('SmartContractInvoker', () => {
     });
 
     it('returns TRANSACTION_FAILED when server returns ERROR status', async () => {
-      const simulate = jest.fn().mockResolvedValue({ success: true });
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
-      const poll = jest.fn();
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const poll = vi.fn();
       mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
-      const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+      const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
       mockPrepareTransaction.mockResolvedValueOnce(prepTx);
-      mockSendTransaction.mockResolvedValueOnce({ status: 'ERROR', errorResult: { toXDR: jest.fn().mockReturnValue('err-xdr') } });
+      mockSendTransaction.mockResolvedValueOnce({ status: 'ERROR', errorResult: { toXDR: vi.fn().mockReturnValue('err-xdr') } });
 
       const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
       const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
@@ -116,10 +116,58 @@ describe('SmartContractInvoker', () => {
       expect(result.errorType).toBe('TRANSACTION_FAILED');
     });
 
+    it('proceeds to poll transaction status for PENDING responses', async () => {
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const pollResult = { success: true, transactionHash: 'pending-hash' };
+      const poll = vi.fn().mockResolvedValue(pollResult);
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'PENDING', hash: 'pending-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(poll).toHaveBeenCalledWith('pending-hash');
+      expect(result).toEqual(pollResult);
+    });
+
+    it('returns a distinct retryable error for DUPLICATE without polling', async () => {
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const poll = vi.fn();
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'DUPLICATE', hash: 'dup-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe('DUPLICATE_TRANSACTION');
+      expect(poll).not.toHaveBeenCalled();
+    });
+
+    it('returns a distinct retryable error for TRY_AGAIN_LATER without polling', async () => {
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const poll = vi.fn();
+      mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
+      const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
+      mockPrepareTransaction.mockResolvedValueOnce(prepTx);
+      mockSendTransaction.mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER', hash: 'retry-hash' });
+
+      const invoker = new SmartContractInvoker(serverInstance, config.networkPassphrase, config);
+      const result = await invoker.invoke(baseParams, 'GSRC', ContractCallType.STATE_CHANGING, signTx, simulate, poll);
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe('TRY_AGAIN_LATER');
+      expect(poll).not.toHaveBeenCalled();
+    });
+
     it('returns OUT_OF_GAS error type for out-of-gas exceptions', async () => {
-      const simulate = jest.fn().mockResolvedValue({ success: true });
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
-      const poll = jest.fn();
+      const simulate = vi.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const poll = vi.fn();
       mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
       mockPrepareTransaction.mockRejectedValueOnce(new Error('out of gas: insufficient budget'));
 

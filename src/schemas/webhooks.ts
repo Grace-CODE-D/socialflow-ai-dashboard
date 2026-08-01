@@ -1,44 +1,27 @@
 /**
  * Standardized Webhook Event Schema
- * 
- * Defines the common envelope and payload structures for all incoming 
- * and outgoing webhooks across the SocialFlow ecosystem.
+ *
+ * Event types are sourced from @socialflow/shared (canonical list).
  */
 
-export type WebhookEventVersion = '1.0';
+export { SUPPORTED_EVENTS } from '@socialflow/shared';
+export type { WebhookEventType } from '@socialflow/shared';
 
-export type WebhookEventType = 
-  | 'post.published'
-  | 'post.failed'
-  | 'analytics.report_ready'
-  | 'blockchain.transaction_completed'
-  | 'blockchain.transaction_failed'
-  | 'system.health_check';
-
-/**
- * Base envelope for all webhook events
- */
+/** Base envelope for all webhook events */
 export interface WebhookEvent<T = Record<string, any>> {
   /** Unique identifier for the webhook event delivery */
   id: string;
-  
   /** The schema version of the event payload */
-  version: WebhookEventVersion;
-  
+  version: '1.0';
   /** The type of event that occurred */
-  event: WebhookEventType;
-  
+  event: import('@socialflow/shared').WebhookEventType;
   /** ISO 8601 timestamp of when the event occurred */
   createdAt: string;
-  
   /** The source system or service that generated the event */
   source: string;
-  
   /** The event-specific data payload */
   data: T;
 }
-
-// --- Specific Event Payloads ---
 
 export interface PostPublishedPayload {
   postId: string;

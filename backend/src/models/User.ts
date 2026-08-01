@@ -12,8 +12,7 @@ export const UserStore = {
   findByEmail: (email: string): Promise<User | null> =>
     prisma.user.findUnique({ where: { email } }),
 
-  findById: (id: string): Promise<User | null> =>
-    prisma.user.findUnique({ where: { id } }),
+  findById: (id: string): Promise<User | null> => prisma.user.findUnique({ where: { id } }),
 
   create: (user: User): Promise<User> =>
     prisma.user.create({
@@ -30,6 +29,10 @@ export const UserStore = {
     prisma.user.update({ where: { id }, data: patch }).catch(() => null),
 
   /** Delete all users — intended for test teardown only. */
-  clear: (): Promise<void> =>
-    prisma.user.deleteMany().then(() => undefined),
+  clear: (): Promise<void> => {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error('UserStore.clear() is only available in test mode');
+    }
+    return prisma.user.deleteMany().then(() => undefined);
+  },
 };

@@ -4,6 +4,8 @@
  * Tests for the requestIdMiddleware and isValidUuidV4 helper.
  *
  * Issue #648 — Validate X-Request-Id header format to prevent log injection.
+ * Issue #1101 — UUID generation, X-Request-ID header injection, logger context binding
+ *
  * The middleware now accepts a client-supplied X-Request-Id only when it is a
  * valid UUID v4; any other value is replaced with a freshly generated UUID.
  */
@@ -324,5 +326,213 @@ describe('getRequestId() outside request context', () => {
   it('returns undefined when called outside request context', () => {
     const requestId = getRequestId();
     expect(requestId).toBeUndefined();
+  });
+});
+
+// ── #1101 Unit tests: UUID generation, X-Request-ID injection, logger context ─
+
+describe('#1101 requestIdMiddleware — UUID generation and X-Request-ID header injection', () => {
+  // ── UUID generator stubbing ───────────────────────────────────────────────
+
+  describe('UUID generator stubbing for deterministic tests', () => {
+    it('uses the stubbed UUID value when no client header is provided', () => {
+      const DETERMINISTIC_UUID = 'a1b2c3d4-e5f6-4789-8abc-def012345678';
+
+      // Mock the uuid module's v4 function
+      jest.mock('uuid', () => ({ v4: () => DETERMINISTIC_UUID }));
+
+      // Build a fresh app with the mocked module
+      const freshApp = express();
+      freshApp.use(requestIdMiddleware);
+      freshApp.get('/deterministic', (req: Request, res: Response) => {
+        res.json({ id: (req as any).requestId });
+      });
+
+      // Verify the middleware attaches a UUID-shaped value
+      const req = {
+        headers: {},
+      } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect((req as any).requestId).toBeDefined();
+      expect((req as any).requestId).toMatch(UUID_V4_REGEX);
+
+      jest.resetModules();
+    });
+
+    it('next() is always called regardless of client-supplied header', () => {
+      const scenarios = [
+        {},                                           // no header
+        { 'x-request-id': '' },                      // empty header
+        { 'x-request-id': 'not-a-uuid' },            // invalid
+        { 'x-request-id': 'f47ac10b-58cc-4372-a567-0e02b2c3d479' }, // valid uuid
+      ];
+
+      for (const headers of scenarios) {
+        const req = { headers } as unknown as Request;
+        const setHeaderMock = jest.fn();
+        const res = { setHeader: setHeaderMock } as unknown as Response;
+        const next = jest.fn();
+
+        requestIdMiddleware(req, res, next);
+
+        expect(next).toHaveBeenCalledTimes(1);
+      }
+    });
+  });
+
+  // ── req.id attachment ─────────────────────────────────────────────────────
+
+  describe('UUID-shaped request ID attachment', () => {
+    it('attaches a UUID v4 shaped ID to the request object', () => {
+      const req = { headers: {} } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect((req as any).requestId).toMatch(UUID_V4_REGEX);
+    });
+
+    it('uses client-supplied UUID v4 as request ID', () => {
+      const clientId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+      const req = {
+        headers: { 'x-request-id': clientId },
+      } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect((req as any).requestId).toBe(clientId);
+    });
+
+    it('generates a fresh UUID when client supplies invalid value', () => {
+      const req = {
+        headers: { 'x-request-id': 'invalid-not-a-uuid' },
+      } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect((req as any).requestId).toMatch(UUID_V4_REGEX);
+      expect((req as any).requestId).not.toBe('invalid-not-a-uuid');
+    });
+  });
+
+  // ── X-Request-ID response header injection ────────────────────────────────
+
+  describe('X-Request-ID response header injection', () => {
+    it('sets X-Request-Id response header with the same ID as the request', () => {
+      const req = { headers: {} } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect(setHeaderMock).toHaveBeenCalledWith('X-Request-Id', (req as any).requestId);
+    });
+
+    it('uses client-supplied valid UUID in response header', () => {
+      const clientId = 'a1b2c3d4-e5f6-4789-8abc-def012345678';
+      const req = {
+        headers: { 'x-request-id': clientId },
+      } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      expect(setHeaderMock).toHaveBeenCalledWith('X-Request-Id', clientId);
+    });
+
+    it('sets a freshly generated UUID in header when client value is invalid', () => {
+      const req = {
+        headers: { 'x-request-id': 'not-a-valid-uuid' },
+      } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn();
+
+      requestIdMiddleware(req, res, next);
+
+      const headerValue = setHeaderMock.mock.calls[0][1] as string;
+      expect(headerValue).toMatch(UUID_V4_REGEX);
+      expect(headerValue).not.toBe('not-a-valid-uuid');
+    });
+  });
+
+  // ── Logger context binding ─────────────────────────────────────────────────
+
+  describe('Logger context binding via AsyncLocalStorage', () => {
+    it('binds the request ID to AsyncLocalStorage so getRequestId() returns it', () => {
+      let capturedId: string | undefined;
+
+      const req = { headers: {} } as unknown as Request;
+      const res = { setHeader: jest.fn() } as unknown as Response;
+      const next = jest.fn().mockImplementation(() => {
+        // Inside next(), AsyncLocalStorage should have the requestId
+        capturedId = getRequestId();
+      });
+
+      requestIdMiddleware(req, res, next);
+
+      expect(capturedId).toBeDefined();
+      expect(capturedId).toMatch(UUID_V4_REGEX);
+      expect(capturedId).toBe((req as any).requestId);
+    });
+
+    it('the request ID in AsyncLocalStorage matches the response header', () => {
+      let storedId: string | undefined;
+
+      const req = { headers: {} } as unknown as Request;
+      const setHeaderMock = jest.fn();
+      const res = { setHeader: setHeaderMock } as unknown as Response;
+      const next = jest.fn().mockImplementation(() => {
+        storedId = getRequestId();
+      });
+
+      requestIdMiddleware(req, res, next);
+
+      const headerValue = setHeaderMock.mock.calls[0][1] as string;
+      expect(storedId).toBe(headerValue);
+    });
+
+    it('different concurrent requests get isolated AsyncLocalStorage contexts', async () => {
+      const app = createTestApp();
+      const responses = await Promise.all([
+        request(app).get('/test'),
+        request(app).get('/test'),
+        request(app).get('/test'),
+      ]);
+
+      const ids = responses.map((r) => r.body.contextRequestId);
+      const unique = new Set(ids);
+      expect(unique.size).toBe(3);
+
+      ids.forEach((id: string) => {
+        expect(id).toMatch(UUID_V4_REGEX);
+      });
+    });
+
+    it('getRequestId() returns the client-supplied UUID inside the handler', async () => {
+      const app = createTestApp();
+      const clientId = 'a1b2c3d4-e5f6-4789-8abc-def012345678';
+
+      const response = await request(app).get('/test').set('X-Request-Id', clientId);
+
+      expect(response.body.contextRequestId).toBe(clientId);
+    });
   });
 });

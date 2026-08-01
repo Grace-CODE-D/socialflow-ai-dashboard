@@ -6,6 +6,7 @@
  */
 import { OpenAPI } from '../api/core/OpenAPI';
 import { request } from '../api/core/request';
+import { traceHttpCall } from '../instrumentation';
 import {
   PostAnalysisInput,
   ReachPrediction,
@@ -15,14 +16,20 @@ import {
 class PredictiveService {
   public async predictReach(input: PostAnalysisInput): Promise<ReachPrediction> {
     try {
-      return await request(OpenAPI, {
-        method: 'POST',
-        url: '/predictive/reach',
-        body: {
-          ...input,
-          scheduledTime: input.scheduledTime?.toISOString(),
-        },
-      });
+      return await traceHttpCall(
+        'predictive-backend',
+        'POST',
+        '/predictive/reach',
+        () =>
+          request(OpenAPI, {
+            method: 'POST',
+            url: '/predictive/reach',
+            body: {
+              ...input,
+              scheduledTime: input.scheduledTime?.toISOString(),
+            },
+          }),
+      );
     } catch {
       // Backend unavailable (e.g. frontend-only mode) — fall back to a
       // deterministic local heuristic so the predictive UI stays functional.
@@ -32,11 +39,17 @@ class PredictiveService {
 
   public async getModelMetrics(postId: string): Promise<{ metrics: MLModelMetrics }> {
     try {
-      return await request(OpenAPI, {
-        method: 'GET',
-        url: '/predictive/history/{postId}',
-        path: { postId },
-      });
+      return await traceHttpCall(
+        'predictive-backend',
+        'GET',
+        '/predictive/history/{postId}',
+        () =>
+          request(OpenAPI, {
+            method: 'GET',
+            url: '/predictive/history/{postId}',
+            path: { postId },
+          }),
+      );
     } catch {
       return {
         metrics: {

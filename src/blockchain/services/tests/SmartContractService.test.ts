@@ -1,25 +1,25 @@
 // @jest-environment node
 
-const mockGetHealth = jest.fn();
-const mockGetLatestLedger = jest.fn();
-const mockGetTransaction = jest.fn();
-const mockGetAccount = jest.fn();
-const mockPrepareTransaction = jest.fn();
-const mockSendTransaction = jest.fn();
-const mockSimulateTransaction = jest.fn();
-const mockGetEvents = jest.fn();
+const mockGetHealth = vi.fn();
+const mockGetLatestLedger = vi.fn();
+const mockGetTransaction = vi.fn();
+const mockGetAccount = vi.fn();
+const mockPrepareTransaction = vi.fn();
+const mockSendTransaction = vi.fn();
+const mockSimulateTransaction = vi.fn();
+const mockGetEvents = vi.fn();
 
-jest.mock('@stellar/stellar-sdk', () => {
-  const TransactionBuilder = jest.fn().mockImplementation(() => ({
-    addOperation: jest.fn().mockReturnThis(),
-    setTimeout: jest.fn().mockReturnThis(),
-    build: jest.fn().mockReturnValue({ toXDR: jest.fn().mockReturnValue('tx-xdr') }),
+vi.mock('@stellar/stellar-sdk', () => {
+  const TransactionBuilder = vi.fn().mockImplementation(() => ({
+    addOperation: vi.fn().mockReturnThis(),
+    setTimeout: vi.fn().mockReturnThis(),
+    build: vi.fn().mockReturnValue({ toXDR: vi.fn().mockReturnValue('tx-xdr') }),
   }));
-  (TransactionBuilder as any).fromXDR = jest.fn().mockReturnValue({ type: 'signed' });
+  (TransactionBuilder as any).fromXDR = vi.fn().mockReturnValue({ type: 'signed' });
 
   return {
     SorobanRpc: {
-      Server: jest.fn().mockImplementation(() => ({
+      Server: vi.fn().mockImplementation(() => ({
         getHealth: mockGetHealth,
         getLatestLedger: mockGetLatestLedger,
         getTransaction: mockGetTransaction,
@@ -30,32 +30,32 @@ jest.mock('@stellar/stellar-sdk', () => {
         getEvents: mockGetEvents,
       })),
       Api: {
-        isSimulationError: jest.fn(() => false),
-        isSimulationSuccess: jest.fn(() => true),
+        isSimulationError: vi.fn(() => false),
+        isSimulationSuccess: vi.fn(() => true),
         GetTransactionStatus: { SUCCESS: 'SUCCESS', FAILED: 'FAILED', NOT_FOUND: 'NOT_FOUND' },
         EventResponse: class {},
       },
     },
-    Contract: jest.fn().mockImplementation(() => ({ call: jest.fn().mockReturnValue({ type: 'op' }) })),
+    Contract: vi.fn().mockImplementation(() => ({ call: vi.fn().mockReturnValue({ type: 'op' }) })),
     TransactionBuilder,
     BASE_FEE: '100',
     Operation: {
-      uploadContractWasm: jest.fn().mockReturnValue({ type: 'upload' }),
-      createCustomContract: jest.fn().mockReturnValue({ type: 'create' }),
+      uploadContractWasm: vi.fn().mockReturnValue({ type: 'upload' }),
+      createCustomContract: vi.fn().mockReturnValue({ type: 'create' }),
     },
     xdr: {
-      TransactionMeta: { fromXDR: jest.fn().mockReturnValue({ switch: () => 0 }) },
+      TransactionMeta: { fromXDR: vi.fn().mockReturnValue({ switch: () => 0 }) },
       ScVal: class {},
     },
-    Keypair: { random: jest.fn().mockReturnValue({ rawPublicKey: () => Buffer.from('salt') }) },
-    hash: jest.fn().mockReturnValue(Buffer.from('wasm-hash')),
+    Keypair: { random: vi.fn().mockReturnValue({ rawPublicKey: () => Buffer.from('salt') }) },
+    hash: vi.fn().mockReturnValue(Buffer.from('wasm-hash')),
   };
 });
 
 import { SmartContractService } from '../SmartContractService';
 import { ContractCallType } from '../../types/soroban';
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 describe('SmartContractService', () => {
   describe('constructor', () => {

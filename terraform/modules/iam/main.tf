@@ -81,7 +81,41 @@ resource "aws_iam_role_policy" "terraform_infrastructure_access" {
         Sid    = "EC2Access"
         Effect = "Allow"
         Action = [
-          "ec2:*"
+          "ec2:DescribeVpcs",
+          "ec2:CreateVpc",
+          "ec2:DeleteVpc",
+          "ec2:DescribeSubnets",
+          "ec2:CreateSubnet",
+          "ec2:DeleteSubnet",
+          "ec2:DescribeInternetGateways",
+          "ec2:AttachInternetGateway",
+          "ec2:CreateInternetGateway",
+          "ec2:DeleteInternetGateway",
+          "ec2:DescribeNatGateways",
+          "ec2:CreateNatGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:DescribeEips",
+          "ec2:CreateEip",
+          "ec2:DeleteEip",
+          "ec2:DescribeRouteTables",
+          "ec2:CreateRouteTable",
+          "ec2:DeleteRouteTable",
+          "ec2:CreateRoute",
+          "ec2:DeleteRoute",
+          "ec2:AssociateRouteTable",
+          "ec2:DisassociateRouteTable",
+          "ec2:DescribeSecurityGroups",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:DescribeFlowLogs",
+          "ec2:CreateFlowLogs",
+          "ec2:DeleteFlowLogs",
+          "ec2:CreateTags",
+          "ec2:DeleteTags"
         ]
         Resource = "*"
         Condition = {
@@ -94,41 +128,71 @@ resource "aws_iam_role_policy" "terraform_infrastructure_access" {
         Sid    = "RDSAccess"
         Effect = "Allow"
         Action = [
-          "rds:*"
+          "rds:DescribeDBSubnetGroups",
+          "rds:CreateDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+          "rds:DescribeDBParameterGroups",
+          "rds:CreateDBParameterGroup",
+          "rds:DeleteDBParameterGroup",
+          "rds:DescribeDBInstances",
+          "rds:CreateDBInstance",
+          "rds:DeleteDBInstance",
+          "rds:ModifyDBInstance",
+          "rds:AddTagsToResource",
+          "rds:RemoveTagsFromResource"
         ]
-        Resource = "*"
-        Condition = {
-          StringLike = {
-            "aws:SourceArn" = "arn:aws:rds:*:*:db/socialflow-${var.env}-*"
-          }
-        }
+        Resource = "arn:aws:rds:*:*:db/socialflow-${var.env}-*"
       },
       {
         Sid    = "ElastiCacheAccess"
         Effect = "Allow"
         Action = [
-          "elasticache:*"
+          "elasticache:DescribeCacheSubnetGroups",
+          "elasticache:CreateCacheSubnetGroup",
+          "elasticache:DeleteCacheSubnetGroup",
+          "elasticache:DescribeReplicationGroups",
+          "elasticache:CreateReplicationGroup",
+          "elasticache:DeleteReplicationGroup",
+          "elasticache:ModifyReplicationGroup",
+          "elasticache:AddTagsToResource",
+          "elasticache:RemoveTagsFromResource"
         ]
-        Resource = "*"
-        Condition = {
-          StringLike = {
-            "aws:SourceArn" = "arn:aws:elasticache:*:*:cluster:socialflow-${var.env}-*"
-          }
-        }
+        Resource = "arn:aws:elasticache:*:*:cluster:socialflow-${var.env}-*"
       },
       {
         Sid    = "ECSAccess"
         Effect = "Allow"
         Action = [
-          "ecs:*",
-          "ecr:*"
+          "ecs:DescribeClusters",
+          "ecs:CreateCluster",
+          "ecs:DeleteCluster",
+          "ecs:DescribeTaskDefinitions",
+          "ecs:RegisterTaskDefinition",
+          "ecs:DeregisterTaskDefinition",
+          "ecs:DescribeServices",
+          "ecs:CreateService",
+          "ecs:UpdateService",
+          "ecs:DeleteService",
+          "ecs:DescribeTasks",
+          "ecs:RunTask",
+          "ecs:StopTask"
         ]
-        Resource = "*"
-        Condition = {
-          StringLike = {
-            "aws:SourceArn" = "arn:aws:ecs:*:*:cluster/socialflow-${var.env}-*"
-          }
-        }
+        Resource = "arn:aws:ecs:*:*:cluster/socialflow-${var.env}-*"
+      },
+      {
+        Sid    = "ECRAccess"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = "arn:aws:ecr:*:*:repository/socialflow-${var.env}-*"
       },
       {
         Sid    = "IAMRoleAccess"

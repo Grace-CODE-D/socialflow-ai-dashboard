@@ -1,6 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import { createLogger } from '../lib/logger';
-import { attemptDelivery } from '../services/WebhookDispatcher';
+import { attemptDelivery, resolveSigningSecret } from '../services/WebhookDispatcher';
 import { getRedisConnection } from '../config/runtime';
 import { prisma } from '../lib/prisma';
 
@@ -39,7 +39,10 @@ export function startWebhookWorker(): Worker<WebhookJobData> {
         return;
       }
 
-      await attemptDelivery(deliveryId, url, delivery.subscription.secret, payload, attempt);
+      const secret = await resolveSigningSecret(deliveryId, delivery.subscription.secret);
+      if (secret === null) return;
+
+      await attemptDelivery(deliveryId, url, secret, payload, attempt);
     },
     { connection, concurrency: 10 },
   );

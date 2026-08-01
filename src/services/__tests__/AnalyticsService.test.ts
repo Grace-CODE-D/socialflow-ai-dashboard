@@ -16,16 +16,16 @@ import {
 // ---------------------------------------------------------------------------
 // Mock IndexedDB layer so tests don't need a real browser environment
 // ---------------------------------------------------------------------------
-jest.mock('../AnalyticsService', () => {
-  const actual = jest.requireActual('../AnalyticsService');
+vi.mock('../AnalyticsService', () => {
+  const actual = vi.requireActual('../AnalyticsService');
   return {
     ...actual,
     analyticsDB: {
-      init: jest.fn().mockResolvedValue(undefined),
-      upsertMany: jest.fn().mockResolvedValue(undefined),
-      getAll: jest.fn().mockResolvedValue([]),
-      getByPlatform: jest.fn().mockResolvedValue([]),
-      getByDateRange: jest.fn().mockResolvedValue([]),
+      init: vi.fn().mockResolvedValue(undefined),
+      upsertMany: vi.fn().mockResolvedValue(undefined),
+      getAll: vi.fn().mockResolvedValue([]),
+      getByPlatform: vi.fn().mockResolvedValue([]),
+      getByDateRange: vi.fn().mockResolvedValue([]),
     },
   };
 });
@@ -33,7 +33,7 @@ jest.mock('../AnalyticsService', () => {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -60,7 +60,7 @@ function clearTokens() {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   setTokens();
 });
 
@@ -92,7 +92,7 @@ describe('Twitter normalisation', () => {
     const svc = new AnalyticsService();
     await svc.sync({ twitter: 'user123' });
 
-    const [record] = (analyticsDB.upsertMany as jest.Mock).mock.calls[0][0] as PostAnalytics[];
+    const [record] = (analyticsDB.upsertMany as vi.Mock).mock.calls[0][0] as PostAnalytics[];
     expect(record.id).toBe('twitter:tw1');
     expect(record.platform).toBe('twitter');
     expect(record.postId).toBe('tw1');
@@ -111,7 +111,7 @@ describe('Twitter normalisation', () => {
     const svc = new AnalyticsService();
     await svc.sync({ twitter: 'user123' });
 
-    const [record] = (analyticsDB.upsertMany as jest.Mock).mock.calls[0][0] as PostAnalytics[];
+    const [record] = (analyticsDB.upsertMany as vi.Mock).mock.calls[0][0] as PostAnalytics[];
     expect(record.likes).toBe(0);
     expect(record.shares).toBe(0);
     expect(record.views).toBe(0);
@@ -141,7 +141,7 @@ describe('Instagram normalisation', () => {
     const svc = new AnalyticsService();
     await svc.sync({ instagram: 'ig-account' });
 
-    const [record] = (analyticsDB.upsertMany as jest.Mock).mock.calls[0][0] as PostAnalytics[];
+    const [record] = (analyticsDB.upsertMany as vi.Mock).mock.calls[0][0] as PostAnalytics[];
     expect(record.id).toBe('instagram:ig1');
     expect(record.platform).toBe('instagram');
     expect(record.likes).toBe(99);
@@ -179,7 +179,7 @@ describe('TikTok normalisation', () => {
     const svc = new AnalyticsService();
     await svc.sync({ tiktok: 'tt-account' });
 
-    const [record] = (analyticsDB.upsertMany as jest.Mock).mock.calls[0][0] as PostAnalytics[];
+    const [record] = (analyticsDB.upsertMany as vi.Mock).mock.calls[0][0] as PostAnalytics[];
     expect(record.id).toBe('tiktok:tt1');
     expect(record.platform).toBe('tiktok');
     expect(record.likes).toBe(200);
@@ -203,7 +203,7 @@ describe('sync() partial failure', () => {
       // Instagram fails
       .mockRejectedValueOnce(new Error('Network error'));
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const svc = new AnalyticsService();
     await svc.sync({ twitter: 'user1', instagram: 'ig1' });
@@ -231,8 +231,8 @@ describe('sync() partial failure', () => {
 // Rate-limit handling — Twitter 429
 // ---------------------------------------------------------------------------
 describe('rate-limit handling', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   it('retries after a 429 and eventually succeeds', async () => {
     const rateLimitRes: Response = {
@@ -254,7 +254,7 @@ describe('rate-limit handling', () => {
     const syncPromise = svc.sync({ twitter: 'user1' });
 
     // Advance past the retry-after delay (1 s) + base retry delay
-    await jest.runAllTimersAsync();
+    await vi.runAllTimersAsync();
     await syncPromise;
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -269,11 +269,11 @@ describe('rate-limit handling', () => {
       json: () => Promise.resolve({}),
     } as unknown as Response);
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const svc = new AnalyticsService();
     const syncPromise = svc.sync({ twitter: 'user1' });
-    await jest.runAllTimersAsync();
+    await vi.runAllTimersAsync();
     await syncPromise;
 
     expect(consoleSpy).toHaveBeenCalled();
@@ -287,7 +287,7 @@ describe('rate-limit handling', () => {
 describe('missing access token', () => {
   it('returns [] for twitter when token is absent', async () => {
     clearTokens();
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const svc = new AnalyticsService();
     await svc.sync({ twitter: 'user1' });
@@ -314,7 +314,7 @@ describe('syncedAt stamping', () => {
     await svc.sync({ twitter: 'user1' });
     const after = Date.now();
 
-    const [record] = (analyticsDB.upsertMany as jest.Mock).mock.calls[0][0] as PostAnalytics[];
+    const [record] = (analyticsDB.upsertMany as vi.Mock).mock.calls[0][0] as PostAnalytics[];
     expect(record.syncedAt).toBeGreaterThanOrEqual(before);
     expect(record.syncedAt).toBeLessThanOrEqual(after);
   });

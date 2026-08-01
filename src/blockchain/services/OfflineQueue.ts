@@ -16,6 +16,23 @@ export class OfflineQueue {
   private redis: any;
   private inMemoryQueue: QueuedTransaction[] = [];
 
+  // Atomically checks the hash size against MAX_QUEUE_SIZE and, if there's
+  // room, writes the entry — closing the check-then-push race between
+  // concurrent callers. Returns 1 if the transaction was queued, 0 if full.
+  private static readonly ENQUEUE_SCRIPT = `
+    local key = KEYS[1]
+    local maxSize = tonumber(ARGV[1])
+    local field = ARGV[2]
+    local value = ARGV[3]
+    local ttl = tonumber(ARGV[4])
+    if redis.call('HLEN', key) >= maxSize then
+      return 0
+    end
+    redis.call('HSET', key, field, value)
+    redis.call('EXPIRE', key, ttl)
+    return 1
+  `;
+
   constructor(redisClient?: any, maxQueueSize = 1000) {
     this.redis = redisClient;
     this.MAX_QUEUE_SIZE = maxQueueSize;
@@ -29,11 +46,6 @@ export class OfflineQueue {
    * Throws if the queue has reached MAX_QUEUE_SIZE.
    */
   async queueTransaction(xdr: string): Promise<string> {
-    const currentSize = await this.getQueueSize();
-    if (currentSize >= this.MAX_QUEUE_SIZE) {
-      throw new Error(`Offline queue is full (max ${this.MAX_QUEUE_SIZE} transactions)`);
-    }
-
     const id = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const transaction: QueuedTransaction = {
       id,
@@ -41,23 +53,38 @@ export class OfflineQueue {
       timestamp: Date.now(),
     };
 
-    // Store in memory
-    this.inMemoryQueue.push(transaction);
-
-    // Persist to Redis if available
     if (this.redis) {
       try {
-        await this.redis.lpush(
+        const accepted = await this.redis.eval(
+          OfflineQueue.ENQUEUE_SCRIPT,
+          1,
           this.QUEUE_KEY,
-          JSON.stringify(transaction)
+          this.MAX_QUEUE_SIZE,
+          id,
+          JSON.stringify(transaction),
+          this.QUEUE_TTL
         );
-        await this.redis.expire(this.QUEUE_KEY, this.QUEUE_TTL);
+        if (!accepted) {
+          throw new Error(`Offline queue is full (max ${this.MAX_QUEUE_SIZE} transactions)`);
+        }
+        this.inMemoryQueue.push(transaction);
+        return id;
       } catch (error) {
+        if (error instanceof Error && error.message.includes('full')) {
+          throw error;
+        }
         console.error('Failed to persist transaction to Redis:', error);
-        // Continue with in-memory storage as fallback
+        // Fall through to in-memory storage below.
       }
     }
 
+    // In-memory path (no Redis, or Redis unavailable): the check and push
+    // below run with no `await` between them, so no other queueTransaction
+    // call can interleave and observe a stale size.
+    if (this.inMemoryQueue.length >= this.MAX_QUEUE_SIZE) {
+      throw new Error(`Offline queue is full (max ${this.MAX_QUEUE_SIZE} transactions)`);
+    }
+    this.inMemoryQueue.push(transaction);
     return id;
   }
 
@@ -67,7 +94,7 @@ export class OfflineQueue {
   async getQueuedTransactions(): Promise<QueuedTransaction[]> {
     if (this.redis) {
       try {
-        const items = await this.redis.lrange(this.QUEUE_KEY, 0, -1);
+        const items = await this.redis.hvals(this.QUEUE_KEY);
         return items.map((item: string) => JSON.parse(item));
       } catch (error) {
         console.error('Failed to retrieve transactions from Redis:', error);
@@ -78,7 +105,8 @@ export class OfflineQueue {
   }
 
   /**
-   * Remove a transaction from the queue
+   * Remove a transaction from the queue in O(1) via a direct hash field
+   * delete, instead of scanning the full list to find a matching entry.
    */
   async removeTransaction(id: string): Promise<void> {
     // Remove from memory
@@ -87,14 +115,7 @@ export class OfflineQueue {
     // Remove from Redis if available
     if (this.redis) {
       try {
-        const items = await this.redis.lrange(this.QUEUE_KEY, 0, -1);
-        for (let i = 0; i < items.length; i++) {
-          const tx = JSON.parse(items[i]);
-          if (tx.id === id) {
-            await this.redis.lrem(this.QUEUE_KEY, 1, items[i]);
-            break;
-          }
-        }
+        await this.redis.hdel(this.QUEUE_KEY, id);
       } catch (error) {
         console.error('Failed to remove transaction from Redis:', error);
       }
@@ -122,7 +143,7 @@ export class OfflineQueue {
   async getQueueSize(): Promise<number> {
     if (this.redis) {
       try {
-        return await this.redis.llen(this.QUEUE_KEY);
+        return await this.redis.hlen(this.QUEUE_KEY);
       } catch (error) {
         console.error('Failed to get queue size from Redis:', error);
         return this.inMemoryQueue.length;
@@ -138,7 +159,7 @@ export class OfflineQueue {
     if (!this.redis) return;
 
     try {
-      const items = await this.redis.lrange(this.QUEUE_KEY, 0, -1);
+      const items = await this.redis.hvals(this.QUEUE_KEY);
       this.inMemoryQueue = items.map((item: string) => JSON.parse(item));
       console.log(`Restored ${this.inMemoryQueue.length} transactions from Redis`);
     } catch (error) {
