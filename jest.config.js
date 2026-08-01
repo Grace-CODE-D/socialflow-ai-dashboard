@@ -6,7 +6,7 @@ module.exports = {
       preset: 'ts-jest',
       testEnvironment: 'jsdom',
       roots: ['<rootDir>/src'],
-      testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
+      testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx', '**/*.test.ts', '**/*.test.tsx'],
       setupFiles: ['<rootDir>/jest.setup.js'],
       transformIgnorePatterns: [
         'node_modules/(?!(@scure|@noble|@otplib|otplib)/)',
