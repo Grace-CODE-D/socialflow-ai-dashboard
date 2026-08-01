@@ -1,20 +1,20 @@
 // @jest-environment node
 
-const mockGetAccount = jest.fn();
-const mockPrepareTransaction = jest.fn();
-const mockSendTransaction = jest.fn();
+const mockGetAccount = vi.fn();
+const mockPrepareTransaction = vi.fn();
+const mockSendTransaction = vi.fn();
 
-jest.mock('@stellar/stellar-sdk', () => {
-  const TransactionBuilder = jest.fn().mockImplementation(() => ({
-    addOperation: jest.fn().mockReturnThis(),
-    setTimeout: jest.fn().mockReturnThis(),
-    build: jest.fn().mockReturnValue({ toXDR: jest.fn().mockReturnValue('unsigned-xdr') }),
+vi.mock('@stellar/stellar-sdk', () => {
+  const TransactionBuilder = vi.fn().mockImplementation(() => ({
+    addOperation: vi.fn().mockReturnThis(),
+    setTimeout: vi.fn().mockReturnThis(),
+    build: vi.fn().mockReturnValue({ toXDR: vi.fn().mockReturnValue('unsigned-xdr') }),
   }));
-  (TransactionBuilder as any).fromXDR = jest.fn().mockReturnValue({ type: 'signedTx' });
+  (TransactionBuilder as any).fromXDR = vi.fn().mockReturnValue({ type: 'signedTx' });
 
   return {
     SorobanRpc: {
-      Server: jest.fn().mockImplementation(() => ({
+      Server: vi.fn().mockImplementation(() => ({
         getAccount: mockGetAccount,
         prepareTransaction: mockPrepareTransaction,
         sendTransaction: mockSendTransaction,
@@ -22,17 +22,17 @@ jest.mock('@stellar/stellar-sdk', () => {
     },
     TransactionBuilder,
     Operation: {
-      uploadContractWasm: jest.fn().mockReturnValue({ type: 'uploadWasm' }),
-      createCustomContract: jest.fn().mockReturnValue({ type: 'createContract' }),
+      uploadContractWasm: vi.fn().mockReturnValue({ type: 'uploadWasm' }),
+      createCustomContract: vi.fn().mockReturnValue({ type: 'createContract' }),
     },
     BASE_FEE: '100',
     xdr: {
       ScVal: class {},
     },
     Keypair: {
-      random: jest.fn().mockReturnValue({ rawPublicKey: () => Buffer.from('salt') }),
+      random: vi.fn().mockReturnValue({ rawPublicKey: () => Buffer.from('salt') }),
     },
-    hash: jest.fn().mockReturnValue(Buffer.from('wasm-hash')),
+    hash: vi.fn().mockReturnValue(Buffer.from('wasm-hash')),
   };
 });
 
@@ -45,9 +45,9 @@ const serverInstance = new (SorobanRpc.Server as any)('url');
 
 const fakeAccount = { id: 'GSRC', sequenceNumber: () => '1' };
 const fakeDeployParams: WasmDeploymentParams = { wasmBuffer: Buffer.from('wasm-binary') };
-const prepTx = { toXDR: jest.fn().mockReturnValue('prep-xdr') };
+const prepTx = { toXDR: vi.fn().mockReturnValue('prep-xdr') };
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 describe('SmartContractDeployer', () => {
   describe('constructor', () => {
@@ -67,8 +67,8 @@ describe('SmartContractDeployer', () => {
         .mockResolvedValueOnce({ status: 'PENDING', hash: 'upload-hash' })
         .mockResolvedValueOnce({ status: 'PENDING', hash: 'create-hash' });
 
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
-      const pollStatus = jest.fn().mockResolvedValue({ success: true, result: undefined });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const pollStatus = vi.fn().mockResolvedValue({ success: true, result: undefined });
 
       const deployer = new SmartContractDeployer(serverInstance, config.networkPassphrase, config);
       const result = await deployer.deployWasm(fakeDeployParams, 'GSRC', signTx, pollStatus);
@@ -79,9 +79,9 @@ describe('SmartContractDeployer', () => {
     it('returns failure when upload transaction errors', async () => {
       mockGetAccount.mockResolvedValueOnce(fakeAccount);
       mockPrepareTransaction.mockResolvedValueOnce(prepTx);
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
       mockSendTransaction.mockResolvedValueOnce({ status: 'ERROR' });
-      const pollStatus = jest.fn();
+      const pollStatus = vi.fn();
 
       const deployer = new SmartContractDeployer(serverInstance, config.networkPassphrase, config);
       const result = await deployer.deployWasm(fakeDeployParams, 'GSRC', signTx, pollStatus);
@@ -97,8 +97,8 @@ describe('SmartContractDeployer', () => {
       mockSendTransaction
         .mockResolvedValueOnce({ status: 'PENDING', hash: 'upload-hash' })
         .mockResolvedValueOnce({ status: 'ERROR' });
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
-      const pollStatus = jest.fn().mockResolvedValue({ success: true });
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const pollStatus = vi.fn().mockResolvedValue({ success: true });
 
       const deployer = new SmartContractDeployer(serverInstance, config.networkPassphrase, config);
       const result = await deployer.deployWasm(fakeDeployParams, 'GSRC', signTx, pollStatus);
@@ -114,8 +114,8 @@ describe('SmartContractDeployer', () => {
       mockSendTransaction
         .mockResolvedValueOnce({ status: 'PENDING', hash: 'upload-hash' })
         .mockResolvedValueOnce({ status: 'PENDING', hash: 'create-hash' });
-      const signTx = jest.fn().mockResolvedValue('signed-xdr');
-      const pollStatus = jest.fn()
+      const signTx = vi.fn().mockResolvedValue('signed-xdr');
+      const pollStatus = vi.fn()
         .mockResolvedValueOnce({ success: true })
         .mockResolvedValueOnce({ success: false, error: 'contract init failed' });
 
@@ -127,8 +127,8 @@ describe('SmartContractDeployer', () => {
 
     it('returns failure when getAccount throws', async () => {
       mockGetAccount.mockRejectedValueOnce(new Error('account missing'));
-      const signTx = jest.fn();
-      const pollStatus = jest.fn();
+      const signTx = vi.fn();
+      const pollStatus = vi.fn();
 
       const deployer = new SmartContractDeployer(serverInstance, config.networkPassphrase, config);
       const result = await deployer.deployWasm(fakeDeployParams, 'GMISSING', signTx, pollStatus);

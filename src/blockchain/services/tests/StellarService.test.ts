@@ -1,10 +1,10 @@
 // @jest-environment node
 
-const mockRoot = jest.fn().mockResolvedValue({ core_version: '19.10.0' });
-const mockLoadAccount = jest.fn();
-const mockFeeStats = jest.fn();
-const mockSubmitTransaction = jest.fn();
-const mockTransactions = jest.fn();
+const mockRoot = vi.fn().mockResolvedValue({ core_version: '19.10.0' });
+const mockLoadAccount = vi.fn();
+const mockFeeStats = vi.fn();
+const mockSubmitTransaction = vi.fn();
+const mockTransactions = vi.fn();
 
 const mockServerInstance = {
   root: mockRoot,
@@ -14,25 +14,25 @@ const mockServerInstance = {
   transactions: mockTransactions,
 };
 
-const mockTransactionBuilder = jest.fn().mockImplementation(() => ({
-  addOperation: jest.fn().mockReturnThis(),
-  setTimeout: jest.fn().mockReturnThis(),
-  build: jest.fn().mockReturnValue({ toXDR: jest.fn().mockReturnValue('base64-xdr') }),
+const mockTransactionBuilder = vi.fn().mockImplementation(() => ({
+  addOperation: vi.fn().mockReturnThis(),
+  setTimeout: vi.fn().mockReturnThis(),
+  build: vi.fn().mockReturnValue({ toXDR: vi.fn().mockReturnValue('base64-xdr') }),
 }));
 
-jest.mock('@stellar/stellar-sdk', () => {
+vi.mock('@stellar/stellar-sdk', () => {
   return {
     __esModule: true,
     default: {
-      Server: jest.fn().mockImplementation(() => mockServerInstance),
+      Server: vi.fn().mockImplementation(() => mockServerInstance),
       TransactionBuilder: mockTransactionBuilder,
       Asset: {
-        native: jest.fn().mockReturnValue({ type: 'native' }),
-        ...(jest.fn().mockImplementation((code: string, issuer: string) => ({ code, issuer })) as any),
+        native: vi.fn().mockReturnValue({ type: 'native' }),
+        ...(vi.fn().mockImplementation((code: string, issuer: string) => ({ code, issuer })) as any),
       },
       Operation: {
-        createAccount: jest.fn().mockReturnValue({ type: 'createAccount' }),
-        changeTrust: jest.fn().mockReturnValue({ type: 'changeTrust' }),
+        createAccount: vi.fn().mockReturnValue({ type: 'createAccount' }),
+        changeTrust: vi.fn().mockReturnValue({ type: 'changeTrust' }),
       },
       Transaction: class {},
       FeeBumpTransaction: class {},
@@ -41,11 +41,11 @@ jest.mock('@stellar/stellar-sdk', () => {
 });
 
 // Mock OfflineQueue so StellarService constructor doesn't trigger Redis restore
-jest.mock('../OfflineQueue', () => ({
-  OfflineQueue: jest.fn().mockImplementation(() => ({
-    restoreFromRedis: jest.fn().mockResolvedValue(undefined),
-    queueTransaction: jest.fn().mockResolvedValue('tx_mock_id'),
-    getQueuedTransactions: jest.fn().mockResolvedValue([]),
+vi.mock('../OfflineQueue', () => ({
+  OfflineQueue: vi.fn().mockImplementation(() => ({
+    restoreFromRedis: vi.fn().mockResolvedValue(undefined),
+    queueTransaction: vi.fn().mockResolvedValue('tx_mock_id'),
+    getQueuedTransactions: vi.fn().mockResolvedValue([]),
   })),
 }));
 
@@ -53,13 +53,13 @@ import { StellarService } from '../StellarService';
 import { DEFAULT_NETWORK, NETWORKS } from '../../config/networks';
 import StellarSdk from '@stellar/stellar-sdk';
 
-const MockServer = (StellarSdk as any).Server as jest.Mock;
+const MockServer = (StellarSdk as any).Server as vi.Mock;
 
 describe('StellarService', () => {
   let service: StellarService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockFeeStats.mockResolvedValue({ base_fee: '100', fee_charged: { p99: '150' } });
     service = new StellarService(DEFAULT_NETWORK);
   });
@@ -180,7 +180,7 @@ describe('StellarService', () => {
 
   describe('queueForOffline', () => {
     it('delegates to OfflineQueue.queueTransaction', async () => {
-      const mockTx = { toXDR: jest.fn().mockReturnValue('base64-xdr') } as any;
+      const mockTx = { toXDR: vi.fn().mockReturnValue('base64-xdr') } as any;
       const id = await service.queueForOffline(mockTx);
       expect(typeof id).toBe('string');
     });

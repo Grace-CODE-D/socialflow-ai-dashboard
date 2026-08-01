@@ -1,24 +1,24 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { PostComposer } from '../PostComposer';
 import { PostsProvider } from '../../contexts/PostsContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { predictiveService } from '../../services/PredictiveService';
 
-jest.mock('../../contexts/AuthContext', () => ({
-  useAuth: jest.fn(),
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: vi.fn(),
 }));
 
-jest.mock('../../services/PredictiveService', () => ({
+vi.mock('../../services/PredictiveService', () => ({
   predictiveService: {
-    predictReach: jest.fn(),
+    predictReach: vi.fn(),
   },
 }));
 
-const mockUseAuth = useAuth as jest.Mock;
-const mockPredictReach = predictiveService.predictReach as jest.Mock;
+const mockUseAuth = useAuth as any;
+const mockPredictReach = predictiveService.predictReach as any;
 
 const basePrediction = {
   reachScore: 72,
@@ -32,13 +32,13 @@ const renderComposer = () =>
   render(
     <ToastProvider>
       <PostsProvider>
-        <PostComposer open onClose={jest.fn()} />
+        <PostComposer open onClose={vi.fn()} />
       </PostsProvider>
     </ToastProvider>
   );
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockPredictReach.mockResolvedValue(basePrediction);
 });
 

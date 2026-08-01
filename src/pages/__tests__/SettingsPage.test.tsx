@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import { SettingsPage } from '../SettingsPage';
 
 vi.mock('../../components/TwoFactorSetup', () => ({ __esModule: true, default: () => <div /> }));
@@ -12,21 +12,15 @@ vi.mock('../../contexts/AuthContext', () => ({
 }));
 
 const toastMock = vi.fn();
-vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ toast: toastMock }),
-}));
+vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ toast: toastMock }) }));
 
 const changePasswordMock = vi.fn();
 vi.mock('../../hooks/usePasswordRotation', () => ({
-  usePasswordRotation: () => ({
-    changePassword: changePasswordMock,
-    isLoading: false,
-    error: null,
-  }),
+  usePasswordRotation: () => ({ changePassword: changePasswordMock, isLoading: false, error: null }),
 }));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 function fillPasswordForm(container: HTMLElement, current: string, next: string) {

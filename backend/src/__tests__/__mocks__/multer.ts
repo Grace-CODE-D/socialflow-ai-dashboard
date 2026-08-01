@@ -11,4 +11,5 @@ function multer() {
 }
 
 multer.memoryStorage = () => ({});
+multer.diskStorage = () => ({});
 export default multer;

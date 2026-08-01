@@ -8,7 +8,11 @@ if (!global.crypto) {
   global.crypto = webcrypto;
 }
 
-if (typeof globalThis.jest === 'undefined' && typeof globalThis.vi !== 'undefined') {
-  globalThis.jest = globalThis.vi;
+// Polyfill ResizeObserver for recharts in jsdom
+if (typeof global.ResizeObserver === 'undefined') {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 }
-
