@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { register, login, refresh, logout, changePassword } from '../controllers/auth';
-import { validate } from '../middleware/validate';
-import { credentialsSchema, refreshTokenSchema, changePasswordSchema } from '../schemas/auth';
-import { authenticate, AuthRequest } from '../middleware/authMiddleware';
-import { sseTicketService } from '../../../services/SSETicketService';
+import { register, login, refresh, logout, changePassword } from './controllers/auth';
+import { validate } from '../../middleware/validate';
+import { credentialsSchema, refreshTokenSchema, changePasswordSchema } from '../../schemas/auth';
+import { authenticate, AuthRequest } from '../../middleware/authenticate';
+import { sseTicketService } from '../../services/SSETicketService';
 
 const router = Router();
 
