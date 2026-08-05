@@ -1,44 +1,43 @@
 import React from 'react';
 import { act, render, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
-jest.mock(
+vi.mock(
   '../../../components/ui/Card',
   () => ({ Card: ({ children, className }: any) => <div className={className}>{children}</div> }),
   { virtual: true },
 );
 
-jest.mock(
+vi.mock(
   '../../../components/ui/SponsoredBadge',
   () => ({ SponsoredBadge: () => <span /> }),
   { virtual: true },
 );
 
 const mockBlockchainService = {
-  getSponsorshipTiers: jest.fn(),
-  getWalletStatus: jest.fn(),
-  connectWallet: jest.fn(),
-  createPaymentTransaction: jest.fn(),
-  lockFundsInTreasury: jest.fn(),
-  submitTransaction: jest.fn(),
+  getSponsorshipTiers: vi.fn(),
+  getWalletStatus: vi.fn(),
+  connectWallet: vi.fn(),
+  createPaymentTransaction: vi.fn(),
+  lockFundsInTreasury: vi.fn(),
+  submitTransaction: vi.fn(),
 };
 
-jest.mock(
+vi.mock(
   '../../../services/blockchainService',
   () => ({ blockchainService: mockBlockchainService }),
   { virtual: true },
 );
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { PaymentModal } = require('../../../components/ui/PaymentModal');
+import { PaymentModal } from '../../../components/ui/PaymentModal';
 
 const tiers = [
   { id: 'basic', name: 'Basic', price: 10, duration: 24, reach: '1k', features: ['feature'] },
 ];
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  jest.useFakeTimers();
+  vi.clearAllMocks();
+  vi.useFakeTimers();
   mockBlockchainService.getSponsorshipTiers.mockReturnValue(tiers);
   mockBlockchainService.getWalletStatus.mockReturnValue({ isConnected: true, balance: 100 });
   mockBlockchainService.createPaymentTransaction.mockResolvedValue({ amount: 10 });
@@ -47,12 +46,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 test('does not call onPaymentComplete/onClose when unmounted during the success timeout', async () => {
-  const onPaymentComplete = jest.fn();
-  const onClose = jest.fn();
+  const onPaymentComplete = vi.fn();
+  const onClose = vi.fn();
 
   const { unmount, getByText, getByRole } = render(
     <PaymentModal isOpen onClose={onClose} onPaymentComplete={onPaymentComplete} postId="post1" />,
@@ -73,7 +72,7 @@ test('does not call onPaymentComplete/onClose when unmounted during the success 
   unmount();
 
   act(() => {
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
   });
 
   expect(onPaymentComplete).not.toHaveBeenCalled();

@@ -6,6 +6,7 @@ import { UserStore } from '../../../models/User';
 import { auditLogger } from '../../../services/AuditLogger';
 import { PasswordHistoryService } from '../../../services/PasswordHistoryService';
 import { AuthBlacklistService } from '../../../services/AuthBlacklistService';
+import { redisAccountLockoutStore } from '../../../services/AccountLockoutService';
 import { prisma } from '../../../lib/prisma';
 import { config } from '../../../config/config';
 
@@ -59,11 +60,24 @@ export async function register(req: Request, res: Response): Promise<void> {
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body as { email: string; password: string };
 
+  // Per-account lockout, independent of the caller's IP — the authLimiter
+  // middleware only throttles by IP, so a distributed attack against a single
+  // account would otherwise never trip any protection.
+  if (await redisAccountLockoutStore.isLockedOut(email)) {
+    res.status(429).json({
+      message: 'Account temporarily locked due to too many failed login attempts. Try again later.',
+    });
+    return;
+  }
+
   const user = await UserStore.findByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    await redisAccountLockoutStore.recordFailedAttempt(email);
     res.status(401).json({ message: 'Invalid credentials' });
     return;
   }
+
+  await redisAccountLockoutStore.resetFailedAttempts(email);
 
   const rotationRequired = await PasswordHistoryService.isRotationRequired(user.id);
 

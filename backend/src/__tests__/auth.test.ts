@@ -1,16 +1,64 @@
 // Set env vars before any module is loaded
-process.env.JWT_SECRET = 'test-secret';
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-that-is-at-least-32-chars!!';
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || 'test-refresh-secret-32-chars!!!!!';
 process.env.JWT_EXPIRES_IN = '15m';
 process.env.JWT_REFRESH_EXPIRES_IN = '7d';
 
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+
+// UserStore (models/User.ts) is Prisma-backed; the shared unit-test prisma
+// stub is intentionally empty (`{}`), so give this file its own in-memory
+// implementation of the handful of `prisma.user.*` calls UserStore makes.
+interface MockUser {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt: Date;
+  refreshTokens: string[];
+  lastPasswordChange: Date;
+}
+const mockUsers = new Map<string, MockUser>();
+jest.mock('../lib/prisma', () => ({
+  prisma: {
+    user: {
+      findUnique: async ({ where }: { where: { id?: string; email?: string } }) => {
+        if (where.id) return mockUsers.get(where.id) ?? null;
+        if (where.email) {
+          for (const u of mockUsers.values()) {
+            if (u.email === where.email) return u;
+          }
+        }
+        return null;
+      },
+      create: async ({ data }: { data: Omit<MockUser, 'lastPasswordChange'> }) => {
+        // lastPasswordChange defaults to now(), mirroring the Prisma schema default
+        const user: MockUser = { ...data, lastPasswordChange: new Date() };
+        mockUsers.set(user.id, user);
+        return user;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Partial<MockUser> }) => {
+        const existing = mockUsers.get(where.id);
+        if (!existing) throw new Error('User not found');
+        const updated = { ...existing, ...data };
+        mockUsers.set(where.id, updated);
+        return updated;
+      },
+      deleteMany: async () => {
+        mockUsers.clear();
+        return { count: 0 };
+      },
+    },
+  },
+}));
+
 import app from '../app';
 import { authenticate } from '../middleware/authenticate';
 import { UserStore } from '../models/User';
 import { resetLimiters } from '../middleware/rateLimit';
+import { redisAccountLockoutStore } from '../services/AccountLockoutService';
 import { Request, Response } from 'express';
 
 // Register a protected test route once at module load time
@@ -143,6 +191,66 @@ describe('POST /api/auth/login', () => {
       .send({ email: 'nobody@example.com', password: 'ValidPass1!' });
 
     expect(res.status).toBe(401);
+  });
+});
+
+// ─── Account lockout (#3) ────────────────────────────────────────────────────
+
+describe('POST /api/auth/login — account lockout', () => {
+  const email = 'lockout-target@example.com';
+
+  beforeEach(async () => {
+    await redisAccountLockoutStore.resetFailedAttempts(email);
+    await request(app)
+      .post('/api/auth/register')
+      .send({ email, password: 'ValidPass1!' });
+  });
+
+  afterEach(async () => {
+    await redisAccountLockoutStore.resetFailedAttempts(email);
+  });
+
+  it('locks the account out after 5 failed attempts from different IPs, independent of caller IP', async () => {
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', `10.0.0.${i}`)
+        .send({ email, password: 'WrongPass1!' });
+      expect(res.status).toBe(401);
+    }
+
+    // A 6th attempt, from yet another IP, with the CORRECT password should
+    // still be rejected — proving the lockout is tracked per-account, not
+    // per-source-IP like the pre-existing authLimiter.
+    const locked = await request(app)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', '10.0.0.99')
+      .send({ email, password: 'ValidPass1!' });
+
+    expect(locked.status).toBe(429);
+  });
+
+  it('resets the failed-attempt counter after a successful login', async () => {
+    for (let i = 0; i < 4; i++) {
+      await request(app)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', `10.0.1.${i}`)
+        .send({ email, password: 'WrongPass1!' });
+    }
+
+    const success = await request(app)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', '10.0.1.99')
+      .send({ email, password: 'ValidPass1!' });
+    expect(success.status).toBe(200);
+
+    // Counter should have reset — a further wrong attempt should not lock
+    // the account out immediately.
+    const afterReset = await request(app)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', '10.0.1.100')
+      .send({ email, password: 'WrongPass1!' });
+    expect(afterReset.status).toBe(401);
   });
 });
 

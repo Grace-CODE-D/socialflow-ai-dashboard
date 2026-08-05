@@ -1,38 +1,38 @@
 // @jest-environment node
 
-const mockGetAccount = jest.fn();
-const mockSimulateTransaction = jest.fn();
-const mockGetEvents = jest.fn();
+const mockGetAccount = vi.fn();
+const mockSimulateTransaction = vi.fn();
+const mockGetEvents = vi.fn();
 
-jest.mock('@stellar/stellar-sdk', () => {
-  const TransactionBuilder = jest.fn().mockImplementation(() => ({
-    addOperation: jest.fn().mockReturnThis(),
-    setTimeout: jest.fn().mockReturnThis(),
-    build: jest.fn().mockReturnValue({ type: 'tx' }),
+vi.mock('@stellar/stellar-sdk', () => {
+  const TransactionBuilder = vi.fn().mockImplementation(() => ({
+    addOperation: vi.fn().mockReturnThis(),
+    setTimeout: vi.fn().mockReturnThis(),
+    build: vi.fn().mockReturnValue({ type: 'tx' }),
   }));
-  (TransactionBuilder as any).fromXDR = jest.fn().mockReturnValue({ type: 'signedTx' });
+  (TransactionBuilder as any).fromXDR = vi.fn().mockReturnValue({ type: 'signedTx' });
 
   return {
     SorobanRpc: {
-      Server: jest.fn().mockImplementation(() => ({
+      Server: vi.fn().mockImplementation(() => ({
         getAccount: mockGetAccount,
         simulateTransaction: mockSimulateTransaction,
         getEvents: mockGetEvents,
       })),
       Api: {
-        isSimulationError: jest.fn((s: any) => s && s._isError === true),
-        isSimulationSuccess: jest.fn((s: any) => s && s._isSuccess === true),
+        isSimulationError: vi.fn((s: any) => s && s._isError === true),
+        isSimulationSuccess: vi.fn((s: any) => s && s._isSuccess === true),
         GetTransactionStatus: { SUCCESS: 'SUCCESS', FAILED: 'FAILED', NOT_FOUND: 'NOT_FOUND' },
       },
     },
-    Contract: jest.fn().mockImplementation(() => ({
-      call: jest.fn().mockReturnValue({ type: 'op' }),
+    Contract: vi.fn().mockImplementation(() => ({
+      call: vi.fn().mockReturnValue({ type: 'op' }),
     })),
     TransactionBuilder,
     BASE_FEE: '100',
     xdr: {
       TransactionMeta: {
-        fromXDR: jest.fn().mockReturnValue({ switch: () => 0, v3: jest.fn() }),
+        fromXDR: vi.fn().mockReturnValue({ switch: () => 0, v3: vi.fn() }),
       },
     },
   };
@@ -51,7 +51,7 @@ const baseParams: ContractInvocationParams = {
   args: [],
 };
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 describe('SmartContractReader', () => {
   describe('constructor', () => {
@@ -73,8 +73,8 @@ describe('SmartContractReader', () => {
         events: [],
       };
       mockSimulateTransaction.mockResolvedValueOnce(simResult);
-      (SorobanRpc.Api.isSimulationError as jest.Mock).mockReturnValueOnce(false);
-      (SorobanRpc.Api.isSimulationSuccess as jest.Mock).mockReturnValueOnce(true);
+      (SorobanRpc.Api.isSimulationError as vi.Mock).mockReturnValueOnce(false);
+      (SorobanRpc.Api.isSimulationSuccess as vi.Mock).mockReturnValueOnce(true);
 
       const reader = new SmartContractReader(serverInstance, config.networkPassphrase, config);
       const result = await reader.simulate(baseParams, 'GSRC');
@@ -85,7 +85,7 @@ describe('SmartContractReader', () => {
     it('returns failure when simulation returns an error', async () => {
       mockGetAccount.mockResolvedValueOnce({ id: 'GSRC' });
       mockSimulateTransaction.mockResolvedValueOnce({ _isError: true, error: 'gas limit exceeded' });
-      (SorobanRpc.Api.isSimulationError as jest.Mock).mockReturnValueOnce(true);
+      (SorobanRpc.Api.isSimulationError as vi.Mock).mockReturnValueOnce(true);
 
       const reader = new SmartContractReader(serverInstance, config.networkPassphrase, config);
       const result = await reader.simulate(baseParams, 'GSRC');

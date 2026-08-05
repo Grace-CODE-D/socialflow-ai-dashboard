@@ -9,7 +9,7 @@ import * as fc from 'fast-check';
 
 // ── Mock WebCrypto ────────────────────────────────────────────────────────────
 
-const mockGetRandomValues = jest.fn((array: Uint8Array) => {
+const mockGetRandomValues = vi.fn((array: Uint8Array) => {
   for (let i = 0; i < array.length; i++) {
     array[i] = Math.floor(Math.random() * 256);
   }
@@ -17,9 +17,9 @@ const mockGetRandomValues = jest.fn((array: Uint8Array) => {
 });
 
 const mockSubtle = {
-  importKey: jest.fn(async () => ({ type: 'secret' })),
-  deriveKey: jest.fn(async () => ({ type: 'secret' })),
-  deriveBits: jest.fn(async (algorithm, key, length) => {
+  importKey: vi.fn(async () => ({ type: 'secret' })),
+  deriveKey: vi.fn(async () => ({ type: 'secret' })),
+  deriveBits: vi.fn(async (algorithm, key, length) => {
     // Simple mock that generates deterministic output
     const bytes = new Uint8Array(length / 8);
     for (let i = 0; i < bytes.length; i++) {
@@ -27,7 +27,7 @@ const mockSubtle = {
     }
     return bytes.buffer;
   }),
-  encrypt: jest.fn(async (algorithm, key, data) => {
+  encrypt: vi.fn(async (algorithm, key, data) => {
     // Simple mock encryption (just returns the data with a prefix)
     const prefix = new Uint8Array([0xaa, 0xbb]); // auth tag mock
     const result = new Uint8Array(prefix.length + data.byteLength);
@@ -35,7 +35,7 @@ const mockSubtle = {
     result.set(new Uint8Array(data), prefix.length);
     return result.buffer;
   }),
-  decrypt: jest.fn(async (algorithm, key, data) => {
+  decrypt: vi.fn(async (algorithm, key, data) => {
     // Simple mock decryption (just removes the prefix)
     const dataArray = new Uint8Array(data);
     return dataArray.slice(2).buffer; // remove 2-byte prefix
@@ -144,7 +144,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   twoFactorService.resetFailedAttempts();
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   // Re-assign mockSubtle methods after clearAllMocks
   mockSubtle.importKey.mockImplementation(async () => ({ type: 'secret' }));
   mockSubtle.deriveKey.mockImplementation(async () => ({ type: 'secret' }));
@@ -496,10 +496,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('isLockedOut delegates to pluggable store when userId is provided', async () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(true),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(180_000),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(180_000),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -512,10 +512,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('isLockedOut returns false via store when store says not locked', async () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(false),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(0),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -528,10 +528,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('getLockoutRemainingMs delegates to pluggable store when userId is provided', async () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(true),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(240_000),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(240_000),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -544,10 +544,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('isLockedOut falls back to in-memory state when no userId is provided', async () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(true),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(999_999),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(999_999),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -561,10 +561,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('pluggable store lockout is not bypassed — in-memory failures do not affect store result', async () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(true),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(60_000),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(true),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(60_000),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -577,10 +577,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('recordFailedAttempt delegates to pluggable store when userId is provided', () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(false),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(0),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);
@@ -591,10 +591,10 @@ describe('Pluggable lockout store (#1247)', () => {
 
   test('resetFailedAttempts delegates to pluggable store when userId is provided', () => {
     const mockStore = {
-      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
-      isLockedOut: jest.fn().mockResolvedValue(false),
-      getLockoutRemainingMs: jest.fn().mockResolvedValue(0),
-      resetFailedAttempts: jest.fn().mockResolvedValue(undefined),
+      recordFailedAttempt: vi.fn().mockResolvedValue(undefined),
+      isLockedOut: vi.fn().mockResolvedValue(false),
+      getLockoutRemainingMs: vi.fn().mockResolvedValue(0),
+      resetFailedAttempts: vi.fn().mockResolvedValue(undefined),
     };
 
     twoFactorService.setLockoutStore(mockStore);

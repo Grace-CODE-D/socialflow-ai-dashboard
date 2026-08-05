@@ -8,7 +8,7 @@ import { configureApi } from '../configure';
 import { OpenAPI } from '../core/OpenAPI';
 import { WebhooksService } from '../services/WebhooksService';
 
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
 function jsonResponse(body: unknown, status = 200): Response {

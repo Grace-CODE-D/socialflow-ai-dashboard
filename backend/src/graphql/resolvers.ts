@@ -40,6 +40,35 @@ async function requireAdmin(ctx: GraphQLContext): Promise<string> {
   return userId;
 }
 
+/**
+ * Throws FORBIDDEN unless userId is a member of organizationId. Does not
+ * check authentication — callers that already have userId in hand (e.g.
+ * after resolving a post's owning org) should call this directly instead of
+ * requireOrgMembership, to avoid re-running the auth check.
+ */
+async function assertOrgMember(userId: string, organizationId: string): Promise<void> {
+  const membership = await prisma.organizationMember.findUnique({
+    where: { organizationId_userId: { organizationId, userId } },
+    select: { organizationId: true },
+  });
+
+  if (!membership) {
+    throw new Error('FORBIDDEN');
+  }
+}
+
+/**
+ * Require the authenticated user to be a member of the given organisation.
+ * Mirrors the membership check already used by the orgUpdate subscription —
+ * applied here to post queries/mutations, which previously only checked
+ * authentication and not org membership.
+ */
+async function requireOrgMembership(ctx: GraphQLContext, organizationId: string): Promise<string> {
+  const userId = await requireAuth(ctx);
+  await assertOrgMember(userId, organizationId);
+  return userId;
+}
+
 export const resolvers = {
   DateTime: DateTimeScalar,
 
@@ -62,7 +91,7 @@ export const resolvers = {
       { organizationId }: { organizationId: string },
       ctx: GraphQLContext,
     ) => {
-      await requireAuth(ctx);
+      await requireOrgMembership(ctx, organizationId);
       return prisma.post.findMany({
         where: { organizationId },
         orderBy: { createdAt: 'desc' },
@@ -112,7 +141,7 @@ export const resolvers = {
       },
       ctx: GraphQLContext,
     ) => {
-      await requireAuth(ctx);
+      await requireOrgMembership(ctx, input.organizationId);
       return prisma.post.create({ data: input });
     },
 
@@ -125,13 +154,19 @@ export const resolvers = {
       }: { id: string; input: { content?: string; platform?: string; scheduledAt?: Date } },
       ctx: GraphQLContext,
     ) => {
-      await requireAuth(ctx);
+      const userId = await requireAuth(ctx);
+      const existing = await prisma.post.findUnique({ where: { id }, select: { organizationId: true } });
+      if (!existing) throw new Error('NOT_FOUND');
+      await assertOrgMember(userId, existing.organizationId);
       return prisma.post.update({ where: { id }, data: input });
     },
 
     /** Delete a post. Returns true on success. */
     deletePost: async (_: unknown, { id }: { id: string }, ctx: GraphQLContext) => {
-      await requireAuth(ctx);
+      const userId = await requireAuth(ctx);
+      const existing = await prisma.post.findUnique({ where: { id }, select: { organizationId: true } });
+      if (!existing) throw new Error('NOT_FOUND');
+      await assertOrgMember(userId, existing.organizationId);
       await prisma.post.delete({ where: { id } });
       return true;
     },
@@ -146,17 +181,7 @@ export const resolvers = {
      */
     orgUpdate: {
       subscribe: async (_: unknown, { orgId }: { orgId: string }, ctx: GraphQLContext) => {
-        await requireAuth(ctx);
-
-        const membership = await prisma.organizationMember.findUnique({
-          where: { organizationId_userId: { organizationId: orgId, userId: ctx.userId! } },
-          select: { organizationId: true },
-        });
-
-        if (!membership) {
-          throw new Error('FORBIDDEN');
-        }
-
+        await requireOrgMembership(ctx, orgId);
         return pubsub.asyncIterableIterator(`orgUpdate:${orgId}`);
       },
     },
